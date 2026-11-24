@@ -214,6 +214,7 @@ VIDEOS = [
     "EME_g29ZMVo",  # Conheça a coleção Storm Emeralda (JP/KO)
     "c0Azny49uPQ",  # Conheça os Produtos da Primeira Leva da Coleção de 30 anos
     "qkAC4Uh-Aw0",  # Conheça a Coleção Parceiro Inicial Série 2
+    "TErW8C_WeT8",  # Conheça a minha coleção de Kanto!
 ]
 
 YT_EMBED = "https://www.youtube-nocookie.com/embed/"
