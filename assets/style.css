@@ -419,7 +419,7 @@ section { padding: 76px 0; }
 .split .art .fan .tcard:nth-child(2) { transform: translateY(-14px); z-index: 2; }
 .split .art .fan .tcard:nth-child(3) { transform: rotate(13deg) translateX(-26px); }
 
-/* ---------- Loja física ---------- */
+/* ---------- Nossa história ---------- */
 
 .store { background: var(--ivory); }
 
@@ -479,6 +479,51 @@ section { padding: 76px 0; }
 }
 
 .mapbox .plate b { display: block; font-family: var(--serif); font-size: 0.96rem; }
+
+/* ---------- Canal no YouTube ---------- */
+
+.ytbox {
+  position: relative;
+  display: block;
+  aspect-ratio: 4 / 3.2;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(214, 242, 75, 0.16), transparent 46%),
+    linear-gradient(150deg, var(--navy-mid), var(--navy-deep));
+  border: 1px solid var(--navy-line);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  color: var(--ink);
+  text-decoration: none;
+}
+
+.ytbox .play {
+  position: absolute;
+  top: 42%; left: 50%;
+  width: 96px; height: 96px;
+  margin: -48px 0 0 -48px;
+  color: var(--gold-lt);
+  filter: drop-shadow(0 0 18px var(--lime-glow));
+  transition: transform .2s ease;
+}
+
+.ytbox .play svg { width: 100%; height: 100%; }
+.ytbox:hover .play { transform: scale(1.06); }
+
+.ytbox .plate {
+  position: absolute;
+  left: 18px; bottom: 18px; right: 18px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(14, 31, 71, 0.1);
+  border-radius: 10px;
+  padding: 13px 16px;
+  font-size: 0.82rem;
+  line-height: 1.5;
+  color: var(--ink-soft);
+}
+
+.ytbox .plate b { display: block; font-family: var(--serif); font-size: 0.96rem; color: var(--ink); }
+.ytbox .plate em { display: block; margin-top: 4px; font-style: normal; font-weight: 600; color: var(--gold-dk); }
 
 /* ---------- Newsletter ---------- */
 

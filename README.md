@@ -1,7 +1,7 @@
 # HOTARU
 
 Protótipo visual da loja **HOTARU** — colecionáveis, selados, singles, acessórios
-e photocards de K-Pop, com loja física em Boa Viagem, Recife/PE.
+e photocards de K-Pop, Loja 100% virtual, com envio para todo o Brasil.
 
 > Brilhe em novos universos
 
@@ -13,11 +13,11 @@ preços, estoque e avaliações são fictícios.
 
 | Arquivo | O que mostra |
 | :--- | :--- |
-| `index.html` | Home — hero, categorias, destaques, prova social, loja física, slogan e newsletter |
+| `index.html` | Home — hero, categorias, destaques, prova social, nossa história com o canal do YouTube, slogan e newsletter |
 | `loja.html` | Catálogo com filtros, ordenação, chips de filtro ativo e paginação |
 | `produto-*.html` | 12 páginas de produto, uma por item do catálogo |
 | `carrinho.html` | Carrinho com itens, cupom e resumo do pedido |
-| `sobre.html` | História da loja, como trabalhamos, endereço e números |
+| `sobre.html` | História da loja, como trabalhamos, canal do YouTube e números |
 | `ajuda.html` | FAQ, tabela de prazos e fretes, trocas e formas de pagamento |
 
 ## Identidade
