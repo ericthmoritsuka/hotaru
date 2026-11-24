@@ -228,6 +228,7 @@ function productForm(product, {onDone}) {
 		el('label', {for: 'admin-quantity'}, 'Quantidade à venda agora'), quantity,
 		el('p', {class: 'admin-hint'}, 'Quantos estão disponíveis para comprar. Os reservados por um pedido e os vendidos não entram nesta conta.'),
 		el('label', {for: 'admin-description'}, 'Descrição'), description,
+		el('p', {class: 'admin-hint'}, 'Use **negrito**, *itálico* e linhas começando com "- " para fazer listas. Uma linha em branco separa os parágrafos.'),
 		el('label', {class: 'admin-check'}, active, ' Mostrar na loja'),
 		el('label', {for: 'admin-files'}, 'Fotos (a primeira é a capa)'), gallery, files,
 		status,
