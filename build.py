@@ -9,6 +9,7 @@ puro — o GitHub Pages serve os arquivos como estão, sem build no servidor.
 """
 
 import hashlib
+import json
 import pathlib
 
 ROOT = pathlib.Path(__file__).parent
@@ -205,12 +206,28 @@ def page(name, title, body, active=None):
 
 YT = "https://www.youtube.com/@Ericthm_"
 
+# Vídeos de coleções que podem aparecer no quadro do YouTube. A cada vez que a
+# página abre, o navegador sorteia um deles; sem JavaScript, fica o primeiro.
+# Para incluir um vídeo, acrescente o ID dele (o trecho depois de "v=" ou de
+# "/shorts/" no link) e rode python3 build.py.
+VIDEOS = [
+    "EME_g29ZMVo",  # Conheça a coleção Storm Emeralda (JP/KO)
+    "c0Azny49uPQ",  # Conheça os Produtos da Primeira Leva da Coleção de 30 anos
+    "qkAC4Uh-Aw0",  # Conheça a Coleção Parceiro Inicial Série 2
+]
+
+YT_EMBED = "https://www.youtube-nocookie.com/embed/"
+
 CANAL = f'''<div class="ytbox">
       <div class="ytframe">
-        <iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=UU9bwv82L_f3oiDR4qchr_pA"
-          title="Vídeos mais recentes do canal Ericthm no YouTube" loading="lazy"
+        <iframe src="{YT_EMBED}{VIDEOS[0]}"
+          title="Vídeo sobre coleções de cartas do canal Ericthm no YouTube" loading="lazy"
           allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+        <script>(function (v, f) {{
+          var id = v[Math.floor(Math.random() * v.length)];
+          if (id !== v[0]) f.src = "{YT_EMBED}" + id;
+        }})({json.dumps(VIDEOS)}, document.currentScript.previousElementSibling);</script>
       </div>
       <a class="plate" href="{YT}" target="_blank" rel="noopener">
         <b>@Ericthm_ · Jornada do Eric</b>
