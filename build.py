@@ -257,8 +257,8 @@ home = f'''
     <div class="section-head">
       <div>
         <p class="eyebrow">Cartas avulsas</p>
-        <h2>À venda agora</h2>
-        <p>As cartas que acabaram de entrar no catálogo.</p>
+        <h2>Cartas em destaque</h2>
+        <p>Algumas das cartas à venda agora.</p>
       </div>
       <a class="more" href="avulsas.html">Ver todas</a>
     </div>
