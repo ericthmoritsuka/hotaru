@@ -8,7 +8,8 @@
 //   home    na home, as cartas mais recentes, logo depois da hero; a seção
 //           inteira fica escondida quando não há nenhuma carta à venda
 //   all     avulsas.html, todas as cartas, com busca e filtros
-//   card    carta.html?c=<id da carta>&l=<idioma>, uma carta, com Adicionar
+//   card    carta.html?c=<id da carta>&l=<idioma>&a=<acabamento>, uma carta
+//           num acabamento, com Adicionar
 //           ao carrinho
 //   order   pedido.html, o carrinho, o pedido e o Pix
 //   sealed, sealedone, homesealed  selados.html, selado.html?id=<produto> e
@@ -118,6 +119,14 @@
 	];
 
 	const finishName = (finish) => FINISH_WORDS.reduce((text, [pattern, word]) => text.replace(pattern, word), String(finish || '')) || null;
+
+	// Cada acabamento de uma carta tem o seu preço e o seu anúncio (Eric,
+	// 2026-11-24), e um acabamento que não é o Normal simples leva uma
+	// etiqueta no anúncio, para não parecer a mesma carta.
+	const plainFinish = (finish) => !finish || /^normal$/i.test(String(finish).trim());
+
+	// A etiqueta fica no canto da foto, como as do resto do site (.tag).
+	const finishTag = (group) => (plainFinish(group.finish) ? null : el('span', {class: 'tag foil finish-tag'}, group.finish));
 
 	const languageName = (code) => LANGUAGES[String(code || '').toLowerCase()] || (code ? String(code).toUpperCase() : '');
 
@@ -306,8 +315,8 @@
 		setName: row.set_name || null,
 	});
 
-	// Uma carta à venda por carta e idioma, com quantas cópias há, os
-	// estados e acabamentos delas e o menor preço.
+	// Uma carta à venda por carta, idioma e acabamento, com quantas cópias
+	// há, os estados delas e o menor preço.
 	function groupCards(rows) {
 		const groups = new Map();
 
@@ -316,7 +325,8 @@
 				continue;
 			}
 
-			const key = `${row.card_id}|${row.language || ''}`;
+			const finish = row.finish ? finishName(row.finish) : null;
+			const key = `${row.card_id}|${row.language || ''}|${finish || ''}`;
 
 			if (!groups.has(key)) {
 				groups.set(key, {
@@ -324,7 +334,7 @@
 					catalog: row.catalog || 'international',
 					conditions: new Set(),
 					copies: [],
-					finishes: new Set(),
+					finish,
 					imagePath: null,
 					key,
 					language: row.language || '',
@@ -348,15 +358,15 @@
 				group.conditions.add(row.condition);
 			}
 
-			if (row.finish) {
-				group.finishes.add(finishName(row.finish));
-			}
 		}
 
 		return [...groups.values()];
 	}
 
-	const cardHref = (group) => `carta.html?c=${encodeURIComponent(group.cardId)}&l=${encodeURIComponent(group.language)}`;
+	const cardHref = (group) => `carta.html?c=${encodeURIComponent(group.cardId)}&l=${encodeURIComponent(group.language)}${group.finish ? `&a=${encodeURIComponent(group.finish)}` : ''}`;
+
+	// O nome da carta com o acabamento, quando não é o Normal simples.
+	const fullName = (group) => (plainFinish(group.finish) ? group.name : `${group.name} (${group.finish})`);
 
 	const available = (n) => (n === 1 ? '1 disponível' : `${n} disponíveis`);
 
@@ -365,10 +375,12 @@
 	function shot(group, {link = true} = {}) {
 		const url = pictureUrl(group.imagePath);
 		const inner = url
-			? el('img', {alt: `${group.name}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+			? el('img', {alt: `${fullName(group)}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
 			: el('span', {class: 'card-pic card-pic-none'}, group.name);
 
-		return link ? el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner) : el('div', {class: 'shot card-shot'}, inner);
+		return link
+			? el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, finishTag(group), inner)
+			: el('div', {class: 'shot card-shot'}, finishTag(group), inner);
 	}
 
 	// O carrinho direto da grade (Eric, 2026-11-24): uma carta cujas cópias
@@ -390,7 +402,7 @@
 		const label = (text) => [icon(), text];
 
 		if (!same) {
-			return el('a', {'aria-label': `Escolher a cópia de ${group.name}`, class: 'quick-add quick-choose', href: cardHref(group)}, 'Escolher');
+			return el('a', {'aria-label': `Escolher a cópia de ${fullName(group)}`, class: 'quick-add quick-choose', href: cardHref(group)}, 'Escolher');
 		}
 
 		const button = el('button', {class: 'quick-add', type: 'button'});
@@ -402,7 +414,7 @@
 
 			button.disabled = !free.length;
 			button.classList.toggle('quick-in', there > 0);
-			button.setAttribute('aria-label', free.length ? `Adicionar ${group.name} ao carrinho` : `${group.name}: todas no carrinho`);
+			button.setAttribute('aria-label', free.length ? `Adicionar ${fullName(group)} ao carrinho` : `${fullName(group)}: todas no carrinho`);
 			button.replaceChildren(...label(there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
 		}
 
@@ -433,7 +445,7 @@
 			shot(group),
 			el('div', {class: 'meta'},
 				el('span', {class: 'kind'}, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
-				el('h3', null, el('a', {href: cardHref(group)}, group.name)),
+				el('h3', null, el('a', {'aria-label': plainFinish(group.finish) ? null : fullName(group), href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
 				el('div', {class: 'card-foot'},
@@ -445,7 +457,7 @@
 	}
 
 	const mailto = (group) => {
-		const what = `${group.name} (${[setLine(group), languageName(group.language)].filter(Boolean).join(', ')})`;
+		const what = `${group.name} (${[setLine(group), languageName(group.language), plainFinish(group.finish) ? null : group.finish].filter(Boolean).join(', ')})`;
 		const subject = `Quero a carta ${what}`;
 		const body = `Olá, Eric!\n\nTenho interesse na carta ${what}, por ${brl(group.price)}.\n\nQuantidade: 1\n\nNome:\n`;
 
@@ -573,7 +585,7 @@
 		};
 
 		for (const group of groups) {
-			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity].join(' '));
+			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish].filter(Boolean).join(' '));
 		}
 
 		function draw() {
@@ -600,7 +612,13 @@
 
 	function one(root, groups) {
 		const params = new URLSearchParams(window.location.search);
-		const group = groups.find((one) => one.cardId === params.get('c') && one.language === (params.get('l') || ''));
+		const same = groups.filter((one) => one.cardId === params.get('c') && one.language === (params.get('l') || ''));
+		// O acabamento do endereço; um endereço sem ele (de antes dos
+		// acabamentos separados) abre o Normal simples, ou o primeiro.
+		const wanted = params.get('a');
+		const group = wanted !== null
+			? same.find((one) => (one.finish || '') === wanted)
+			: same.find((one) => plainFinish(one.finish)) || same[0];
 
 		if (!group) {
 			root.replaceChildren(
@@ -612,7 +630,7 @@
 			return;
 		}
 
-		document.title = `${group.name} | Cartas | HOTARU`;
+		document.title = `${fullName(group)} | Cartas | HOTARU`;
 
 		const facts = [
 			['Coleção', group.setName],
@@ -620,7 +638,7 @@
 			['Idioma', languageName(group.language)],
 			['Raridade', group.rarity],
 			['Estado', [...group.conditions].join(', ')],
-			['Acabamento', [...group.finishes].join(', ')],
+			['Acabamento', group.finish],
 			['Disponível', available(group.copies.length)],
 		].filter(([, value]) => value);
 
@@ -634,12 +652,31 @@
 				el('p', {class: 'card-price'}, brl(group.price)),
 				factList,
 				buyBox(group),
+				otherFinishes(group, same),
 				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: ela fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
 				el('p', {class: 'card-how'}, 'Dúvidas? ', el('a', {href: mailto(group)}, `Escreva para ${EMAIL}`), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
 		));
 		addArtist(group, factList);
+	}
+
+	// Os outros acabamentos da mesma carta e idioma à venda, cada um com o
+	// seu preço e link.
+	function otherFinishes(group, same) {
+		const others = same.filter((one) => one !== group);
+
+		if (!others.length) {
+			return null;
+		}
+
+		return el('div', {class: 'other-finishes'},
+			el('p', {class: 'other-finishes-title'}, 'Também à venda'),
+			el('ul', null, others.map((one) => el('li', null,
+				el('a', {href: cardHref(one)}, one.finish || 'Normal'),
+				` · ${brl(one.price)} · ${available(one.copies.length)}`
+			)))
+		);
 	}
 
 	// Adicionar ao carrinho: uma linha por estado, acabamento e preço, com
@@ -1059,7 +1096,7 @@
 				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
 					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
 					el('div', {class: 'cart-body'},
-						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}`}, item.name)),
+						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
 						el('p', {class: 'cart-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, NOTICES[status][0]), ` ${NOTICES[status][1]}`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price))

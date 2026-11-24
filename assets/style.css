@@ -944,6 +944,16 @@ section { padding: 76px 0; }
 .card-set { margin: -4px 0 8px; font-size: 0.8rem; color: var(--ink-soft); }
 .card-count { margin: 3px 0 0; font-size: 0.76rem; color: var(--ink-soft); }
 
+/* O acabamento que não é o Normal simples (Reverse Holo, Holo...): uma
+   etiqueta no canto da foto, para o anúncio não parecer a mesma carta. */
+.finish-tag { max-width: calc(100% - 28px); line-height: 1.3; white-space: normal; }
+.card-detail .finish-tag { top: 18px; left: 18px; font-size: 11px; padding: 7px 12px; }
+
+.other-finishes { margin: 0 0 22px; font-size: 0.9rem; }
+.other-finishes-title { margin: 0 0 6px; font: 600 10px/1 var(--sans); letter-spacing: 0.17em; text-transform: uppercase; color: var(--gold-dk); }
+.other-finishes ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.other-finishes a { color: var(--ink); font-weight: 600; }
+
 .card-filters {
   display: grid;
   grid-template-columns: 2fr 1fr 1fr 1fr;
