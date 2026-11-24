@@ -177,6 +177,11 @@ def grid(items):
 # Versão do CSS no link, para o HTML novo nunca chegar com o CSS velho em cache.
 CSS_V = hashlib.sha256((ROOT / "assets/style.css").read_bytes()).hexdigest()[:10]
 
+# O catálogo de cartas (assets/catalogo.js) lê as cartas à venda no navegador,
+# direto do Supabase; a versão no link segue a mesma ideia do CSS.
+JS_V = hashlib.sha256((ROOT / "assets/catalogo.js").read_bytes()).hexdigest()[:10]
+CATALOGO_JS = f'<script src="assets/catalogo.js?v={JS_V}" defer></script>'
+
 
 def page(name, title, body, active=None):
     html = part("head").replace("{{TITLE}}", title) + part("sprite") + part("header") + body + part("footer")
@@ -225,7 +230,7 @@ home = f'''
         A HOTARU é uma loja virtual que nasceu da paixão por colecionar cartas.
       </p>
       <div class="actions">
-        <a class="btn btn-gold" href="sobre.html">Conheça a HOTARU</a>
+        <a class="btn btn-gold" href="avulsas.html">Ver as cartas</a>
         <a class="btn btn-ghost" href="{YT}" target="_blank" rel="noopener">Ver o canal</a>
       </div>
     </div>
@@ -234,6 +239,20 @@ home = f'''
       {tcard("m-card", "Singles")}
       {tcard("m-sleeve", "Coleção")}
     </div>
+  </div>
+</section>
+
+<section class="cartas-home" id="cartas" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Cartas avulsas</p>
+        <h2>À venda agora</h2>
+        <p>As cartas que acabaram de entrar no catálogo.</p>
+      </div>
+      <a class="more" href="avulsas.html">Ver todas</a>
+    </div>
+    <div data-catalog="home"></div>
   </div>
 </section>
 
@@ -266,8 +285,47 @@ home = f'''
 
 '''
 
-page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home, "index.html")
+page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home + CATALOGO_JS, "index.html")
 print("index.html")
+
+
+# --------------------------------------------------------------------------
+# Cartas à venda (lidas no navegador por assets/catalogo.js)
+# --------------------------------------------------------------------------
+
+avulsas = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Cartas</p>
+    <h1>Cartas avulsas</h1>
+    <p>As cartas à venda agora. Para comprar, abra a carta e mande um e-mail: a entrega é combinada com você.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="all"><p class="card-note" role="status">Carregando as cartas…</p></div>
+</section>
+{CATALOGO_JS}
+'''
+
+page("avulsas", "Cartas avulsas — HOTARU", avulsas, "avulsas.html")
+print("avulsas.html")
+
+carta = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a></p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="card"><p class="card-note" role="status">Carregando a carta…</p></div>
+</section>
+{CATALOGO_JS}
+'''
+
+page("carta", "Carta — HOTARU", carta, "avulsas.html")
+print("carta.html")
 
 
 # --------------------------------------------------------------------------
