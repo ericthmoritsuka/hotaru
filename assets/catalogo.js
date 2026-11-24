@@ -16,6 +16,10 @@
 //
 // Todo texto vindo do banco entra na página como texto (textContent), nunca
 // como HTML.
+//
+// O artista da carta (Eric, 2026-11-24) não está no catálogo: a página da
+// carta o lê no TCGdex, que responde a qualquer site. Se o TCGdex não
+// responder, a linha simplesmente não aparece.
 
 (() => {
 	'use strict';
@@ -25,6 +29,10 @@
 	// regras do banco deixam um visitante ler.
 	const SUPABASE_KEY = 'sb_publishable_Ycfz9bobfuvHWdDKjaoQQA_LDYmm0vJ';
 	const EMAIL = 'hotaru.loja@gmail.com';
+	const TCGDEX = 'https://api.tcgdex.net/v2';
+	// Os idiomas ocidentais que o TCGdex lê pelo idioma da cópia; um catálogo
+	// asiático (ja, ko, zh-tw...) é lido pelo próprio código.
+	const WESTERN = new Set(['de', 'en', 'es', 'fr', 'it', 'pt']);
 	const HOME_LIMIT = 8;
 
 	const LANGUAGES = {
@@ -157,6 +165,7 @@
 			if (!groups.has(key)) {
 				groups.set(key, {
 					cardId: row.card_id,
+					catalog: row.catalog || 'international',
 					conditions: new Set(),
 					copies: [],
 					finishes: new Set(),
@@ -329,18 +338,69 @@
 			['Disponível', available(group.copies.length)],
 		].filter(([, value]) => value);
 
+		const factList = el('dl', {class: 'card-facts'}, facts.map(([label, value]) => [el('dt', null, label), el('dd', null, value)]));
+
 		root.replaceChildren(el('div', {class: 'card-detail'},
 			shot(group, {link: false}),
 			el('div', {class: 'card-info'},
 				el('p', {class: 'eyebrow'}, ['Carta avulsa', languageName(group.language)].filter(Boolean).join(' · ')),
 				el('h1', null, group.name),
 				el('p', {class: 'card-price'}, brl(group.price)),
-				el('dl', {class: 'card-facts'}, facts.map(([label, value]) => [el('dt', null, label), el('dd', null, value)])),
+				factList,
 				el('a', {class: 'btn btn-gold', href: mailto(group)}, 'Quero esta carta'),
 				el('p', {class: 'card-how'}, `Para comprar, mande um e-mail para ${EMAIL} (o botão já abre com a carta escrita). A entrega é combinada com você.`),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
 		));
+		addArtist(group, factList);
+	}
+
+	// O artista da carta, do TCGdex: no idioma da cópia, depois em inglês.
+	// Null quando o TCGdex não responde ou não sabe.
+	async function readArtist(group) {
+		const own = group.catalog === 'international' ? (WESTERN.has(group.language) ? group.language : 'en') : group.catalog;
+		const langs = [...new Set([own, group.catalog === 'international' ? 'en' : own])];
+
+		for (const lang of langs) {
+			try {
+				const response = await fetch(`${TCGDEX}/${lang}/cards/${encodeURIComponent(group.cardId)}`);
+
+				if (response.ok) {
+					const card = await response.json();
+					const name = card && typeof card.illustrator === 'string' ? card.illustrator.trim() : '';
+
+					if (name) {
+						return name;
+					}
+				}
+			}
+			catch {
+				// Sem rede ou TCGdex fora do ar: tenta o próximo, depois desiste.
+			}
+		}
+
+		return null;
+	}
+
+	// Põe a linha Artista depois de Raridade (ou depois de Idioma, para uma
+	// carta sem raridade), quando o TCGdex responde.
+	async function addArtist(group, list) {
+		const name = await readArtist(group);
+
+		if (!name || !list.isConnected) {
+			return;
+		}
+
+		const terms = [...list.querySelectorAll('dt')];
+		const after = terms.find((term) => term.textContent === 'Raridade') || terms.find((term) => term.textContent === 'Idioma');
+		const pair = [el('dt', null, 'Artista'), el('dd', {class: 'card-artist'}, name)];
+
+		if (after) {
+			after.nextElementSibling.after(...pair);
+		}
+		else {
+			list.append(...pair);
+		}
 	}
 
 	// ----------------------------------------------------------- start
