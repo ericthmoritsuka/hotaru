@@ -714,6 +714,9 @@ section { padding: 76px 0; }
 
 @media (max-width: 720px) {
   .wrap { padding: 0 18px; }
+  .split { grid-template-columns: minmax(0, 1fr); }
+  .split .side { padding: 40px 24px; }
+  .split .art .fan .tcard { width: 112px; }
   section { padding: 54px 0; }
 
   /* Cabeçalho do celular: marca e ícones em cima, navegação numa faixa

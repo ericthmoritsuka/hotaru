@@ -13,7 +13,7 @@ preços, estoque e avaliações são fictícios.
 
 | Arquivo | O que mostra |
 | :--- | :--- |
-| `index.html` | Home — hero, categorias, destaques, prova social, nossa história com o canal do YouTube, slogan e newsletter |
+| `index.html` | Home — só cartas e selados: hero, como conferimos, nossa história com o canal do YouTube, slogan e aviso de cartas em breve |
 | `loja.html` | Catálogo com filtros, ordenação, chips de filtro ativo e paginação |
 | `produto-*.html` | 12 páginas de produto, uma por item do catálogo |
 | `carrinho.html` | Carrinho com itens, cupom e resumo do pedido |

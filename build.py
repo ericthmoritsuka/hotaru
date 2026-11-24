@@ -211,48 +211,24 @@ home = f'''
       <p class="eyebrow">Loja virtual · Recife/PE</p>
       <h1>A carta que faltava<br>na sua <em>coleção</em>.</h1>
       <p class="lede">
-        Selados lacrados de fábrica, singles conferidos carta a carta e os acessórios
-        que mantêm tudo isso intacto. Somos uma loja virtual que nasceu da paixão
-        por colecionar cartas e despacha para o Brasil inteiro.
+        Cartas avulsas conferidas uma a uma e alguns selados lacrados de fábrica,
+        enviados protegidos em sleeve, toploader e caixa. Somos uma loja virtual que
+        nasceu da paixão por colecionar cartas e despacha para o Brasil inteiro.
       </p>
       <div class="actions">
-        <a class="btn btn-gold" href="loja.html">Ver a loja</a>
-        <a class="btn btn-ghost" href="#destaques">Destaques da semana</a>
+        <a class="btn btn-gold" href="#avisos">Quero ser avisado</a>
+        <a class="btn btn-ghost" href="#conferencia">Como conferimos</a>
       </div>
     </div>
     <div class="hero-cards">
       {tcard("m-booster", "Selados")}
       {tcard("m-card", "Singles")}
-      {tcard("m-photocard", "K-Pop")}
+      {tcard("m-sleeve", "Protegida")}
     </div>
   </div>
 </section>
 
-<section class="wrap">
-  <div class="section-head">
-    <div>
-      <p class="eyebrow">Categorias</p>
-      <h2>Por onde você quer começar</h2>
-      <p>Quatro corredores, do lacre de fábrica ao porta-carta que protege o achado.</p>
-    </div>
-    <a class="more" href="loja.html">Ver tudo</a>
-  </div>
-  <div class="cats">{cats_html}</div>
-</section>
-
-<section class="wrap" id="destaques">
-  <div class="section-head">
-    <div>
-      <p class="eyebrow">Destaques</p>
-      <h2>Chegou essa semana</h2>
-      <p>O que saiu da caixa nos últimos dias, com estoque conferido antes de entrar no site.</p>
-    </div>
-    <a class="more" href="loja.html">Catálogo completo</a>
-  </div>
-  {grid(P[:8])}
-</section>
-
-<section class="wrap">
+<section class="wrap" id="conferencia">
   <div class="split">
     <div class="side">
       <p class="eyebrow">Singles</p>
@@ -262,12 +238,12 @@ home = f'''
         anunciar, e fotografamos a carta exata que vai para o envelope. O que está no
         anúncio é o que chega — sem "foto ilustrativa".
       </p>
-      <a class="btn btn-gold" href="loja.html#singles">Procurar um single</a>
+      <a class="btn btn-gold" href="#avisos">Quero ser avisado</a>
     </div>
     <div class="art">
       <div class="fan">
         {tcard("m-card", "NM")}
-        {tcard("m-photocard", "PSA 10")}
+        {tcard("m-card", "PSA 10")}
         {tcard("m-sleeve", "Protegido")}
       </div>
     </div>
@@ -302,11 +278,11 @@ home = f'''
   </div>
 </section>
 
-<section class="news">
+<section class="news" id="avisos">
   <div class="wrap">
-    <p class="eyebrow">Lista de avisos</p>
-    <h2>Pré-venda abre <em>primeiro</em> para a lista</h2>
-    <p>Booster box some rápido. Quem está na lista recebe o link algumas horas antes de o estoque ir para o site.</p>
+    <p class="eyebrow">Em breve</p>
+    <h2>As cartas disponíveis <em>chegam aqui</em></h2>
+    <p>O catálogo de cartas está quase pronto. Deixe seu e-mail e a gente avisa quando as primeiras cartas e os selados entrarem no site.</p>
     <form class="field" onsubmit="return false">
       <input type="email" placeholder="seu@email.com.br" aria-label="Seu e-mail">
       <button class="btn btn-gold" type="submit">Avisar</button>
@@ -315,7 +291,7 @@ home = f'''
 </section>
 '''
 
-page("index", "HOTARU — Colecionáveis, selados e K-Pop | Recife/PE", home, "index.html")
+page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home, "index.html")
 print("index.html")
 
 
