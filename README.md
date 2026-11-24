@@ -18,7 +18,7 @@ preços, estoque e avaliações são fictícios.
 | `produto-*.html` | 12 páginas de produto, uma por item do catálogo |
 | `carrinho.html` | Carrinho com itens, cupom e resumo do pedido |
 | `sobre.html` | História da loja, como trabalhamos, canal do YouTube e números |
-| `ajuda.html` | FAQ, tabela de prazos e fretes, trocas e formas de pagamento |
+| `ajuda.html` | Contato e perguntas frequentes; sem link no menu por enquanto |
 
 ## Identidade
 

@@ -8,6 +8,7 @@ Os fragmentos compartilhados ficam em _parts/. Tudo que sai daqui é HTML
 puro — o GitHub Pages serve os arquivos como estão, sem build no servidor.
 """
 
+import hashlib
 import pathlib
 
 ROOT = pathlib.Path(__file__).parent
@@ -173,8 +174,13 @@ def grid(items):
     return '<div class="products">\n' + "\n".join(card(p) for p in items) + "\n</div>"
 
 
+# Versão do CSS no link, para o HTML novo nunca chegar com o CSS velho em cache.
+CSS_V = hashlib.sha256((ROOT / "assets/style.css").read_bytes()).hexdigest()[:10]
+
+
 def page(name, title, body, active=None):
     html = part("head").replace("{{TITLE}}", title) + part("sprite") + part("header") + body + part("footer")
+    html = html.replace('href="assets/style.css"', f'href="assets/style.css?v={CSS_V}"', 1)
     if active:
         html = html.replace(f'<a href="{active}">', f'<a href="{active}" aria-current="page">', 1)
     (ROOT / f"{name}.html").write_text(html, encoding="utf-8")
@@ -195,9 +201,8 @@ CANAL = f'''<div class="ytbox">
           referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
       </div>
       <a class="plate" href="{YT}" target="_blank" rel="noopener">
-        <b>Canal no YouTube</b>
-        @Ericthm_ · colecionismo de cartas
-        <em>Ver o canal no YouTube &rarr;</em>
+        <b>@Ericthm_ · Jornada do Eric</b>
+        <em>Assistir no YouTube &rarr;</em>
       </a>
     </div>'''
 
@@ -216,41 +221,18 @@ home = f'''
       <p class="eyebrow">Loja virtual · Recife/PE</p>
       <h1>A carta que faltava<br>na sua <em>coleção</em>.</h1>
       <p class="lede">
-        Cartas avulsas conferidas uma a uma e alguns selados lacrados de fábrica,
-        enviados protegidos em sleeve, toploader e caixa. Somos uma loja virtual que
-        nasceu da paixão por colecionar cartas e despacha para o Brasil inteiro.
+        Cartas avulsas e alguns selados, direto da coleção de quem ama colecionar.
+        A HOTARU é uma loja virtual que nasceu da paixão por colecionar cartas.
       </p>
       <div class="actions">
-        <a class="btn btn-gold" href="#avisos">Quero ser avisado</a>
-        <a class="btn btn-ghost" href="#conferencia">Como conferimos</a>
+        <a class="btn btn-gold" href="sobre.html">Conheça a HOTARU</a>
+        <a class="btn btn-ghost" href="{YT}" target="_blank" rel="noopener">Ver o canal</a>
       </div>
     </div>
     <div class="hero-cards">
       {tcard("m-booster", "Selados")}
       {tcard("m-card", "Singles")}
-      {tcard("m-sleeve", "Protegida")}
-    </div>
-  </div>
-</section>
-
-<section class="wrap" id="conferencia">
-  <div class="split">
-    <div class="side">
-      <p class="eyebrow">Singles</p>
-      <h2>Toda carta passa<br>por <em>duas conferências</em>.</h2>
-      <p>
-        Avaliamos centralização, bordas, superfície e quinas sob luz direta antes de
-        anunciar, e fotografamos a carta exata que vai para o envelope. O que está no
-        anúncio é o que chega — sem "foto ilustrativa".
-      </p>
-      <a class="btn btn-gold" href="#avisos">Quero ser avisado</a>
-    </div>
-    <div class="art">
-      <div class="fan">
-        {tcard("m-card", "NM")}
-        {tcard("m-card", "PSA 10")}
-        {tcard("m-sleeve", "Protegido")}
-      </div>
+      {tcard("m-sleeve", "Coleção")}
     </div>
   </div>
 </section>
@@ -266,9 +248,8 @@ home = f'''
         de ganhar lugar na página.
       </p>
       <p>
-        Hoje somos uma loja 100% virtual, sem balcão e sem endereço para visitar. Cada
-        pedido é separado com o cuidado de quem coleciona e enviado para todo o Brasil.
-        E no nosso canal do YouTube a gente ensina mais sobre colecionismo de cartas.
+        Hoje a HOTARU é uma loja 100% virtual. E no nosso canal do YouTube a gente
+        ensina mais sobre colecionismo de cartas.
       </p>
       <a class="btn btn-navy" href="sobre.html">Conheça a HOTARU</a>
     </div>
@@ -283,17 +264,6 @@ home = f'''
   </div>
 </section>
 
-<section class="news" id="avisos">
-  <div class="wrap">
-    <p class="eyebrow">Em breve</p>
-    <h2>As cartas disponíveis <em>chegam aqui</em></h2>
-    <p>O catálogo de cartas está quase pronto. Deixe seu e-mail e a gente avisa quando as primeiras cartas e os selados entrarem no site.</p>
-    <form class="field" onsubmit="return false">
-      <input type="email" placeholder="seu@email.com.br" aria-label="Seu e-mail">
-      <button class="btn btn-gold" type="submit">Avisar</button>
-    </form>
-  </div>
-</section>
 '''
 
 page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home, "index.html")
@@ -560,33 +530,9 @@ sobre = f'''
       alguém. É pouca luz e dura pouco, mas é o motivo pelo qual se abre o próximo pacote.
     </p>
     <p>
-      A HOTARU é uma loja 100% virtual: não tem balcão nem endereço para visitar. Cada pedido é
-      separado com o mesmo cuidado de quem coleciona e enviado para o Brasil inteiro. E para quem
-      quer ir além da compra, o nosso canal do YouTube ensina mais sobre colecionismo de cartas.
+      Hoje a HOTARU é uma loja 100% virtual. E para quem quer ir além das cartas, o nosso canal
+      do YouTube ensina mais sobre colecionismo.
     </p>
-  </div>
-</section>
-
-<section class="wrap">
-  <div class="section-head">
-    <div><p class="eyebrow">Como trabalhamos</p><h2>Três coisas que não negociamos</h2></div>
-  </div>
-  <div class="values">
-    <div class="value">
-      <svg viewBox="0 0 24 24"><use href="#i-cards"/></svg>
-      <h3>A foto é a carta</h3>
-      <p>Todo single é fotografado individualmente. Nada de imagem de catálogo — o que está no anúncio é a unidade que entra no envelope.</p>
-    </div>
-    <div class="value">
-      <svg viewBox="0 0 24 24"><use href="#i-shield"/></svg>
-      <h3>Embalagem não é extra</h3>
-      <p>Sleeve, toploader e envelope rígido em todo pedido, do booster de R$ 34 ao graded de R$ 1.800. Não cobramos por isso.</p>
-    </div>
-    <div class="value">
-      <svg viewBox="0 0 24 24"><use href="#i-yt"/></svg>
-      <h3>Colecionar se aprende</h3>
-      <p>No <a href="{YT}" target="_blank" rel="noopener">canal do YouTube</a> a gente ensina mais sobre colecionismo de cartas, para quem está no primeiro binder e para quem já tem a coleção organizada.</p>
-    </div>
   </div>
 </section>
 
@@ -602,15 +548,6 @@ sobre = f'''
   </div>
 </section>
 
-<section class="wrap">
-  <div class="numbers">
-    <div><strong>2.648</strong><span>produtos no catálogo</span></div>
-    <div><strong>100%</strong><span>loja virtual</span></div>
-    <div><strong>4,9</strong><span>média de avaliação</span></div>
-    <div><strong>2 dias</strong><span>entrega média no Recife</span></div>
-  </div>
-</section>
-
 <section class="slogan">
   <div class="wrap">
     <img class="sig" src="assets/logo-card.png" alt="">
@@ -619,7 +556,7 @@ sobre = f'''
 </section>
 '''
 
-page("sobre", "Sobre nós — HOTARU | Recife/PE", sobre, "index.html#sobre")
+page("sobre", "Sobre nós — HOTARU | Recife/PE", sobre, "sobre.html")
 
 
 # --------------------------------------------------------------------------
@@ -627,34 +564,13 @@ page("sobre", "Sobre nós — HOTARU | Recife/PE", sobre, "index.html#sobre")
 # --------------------------------------------------------------------------
 
 FAQ = [
-    ("Como vocês avaliam a condição de um single?",
-     "Conferimos centralização, bordas, quinas e superfície sob luz direta, e classificamos em Mint, "
-     "Near Mint, Lightly Played ou Played. Cartas graded vêm no slab original, com o número do "
-     "certificado no anúncio para você conferir na PSA ou na CGC."),
-    ("O que significa 'lacrado de fábrica'?",
-     "Que o produto está exatamente como saiu da distribuidora, com o filme original intacto. "
-     "Não abrimos, não conferimos por dentro e não revendemos caixa reembalada."),
     ("Vocês têm loja física?",
-     "Não. A HOTARU é uma loja 100% virtual, sem endereço para visitar. Todo pedido sai embalado "
-     "e com código de rastreio para qualquer lugar do Brasil."),
-    ("Como o pedido é embalado?",
-     "Toda carta sai em sleeve e toploader, dentro de envelope rígido. Selados vão em caixa com "
-     "preenchimento. Isso vale para qualquer valor de pedido e não é cobrado à parte."),
-    ("Qual o prazo de entrega?",
-     "Recife e região metropolitana em até 2 dias úteis; capitais do Nordeste em 3 a 5; demais "
-     "regiões em 5 a 9. O prazo começa a contar depois da confirmação do pagamento."),
-    ("Posso trocar ou devolver?",
-     "Pode, em até 7 dias corridos depois do recebimento, com o item do jeito que chegou. Se o "
-     "problema foi nosso, o frete de volta é por nossa conta."),
-    ("Vocês compram coleção?",
-     "Compramos. Mande fotos e a lista das cartas por e-mail e a gente responde com a avaliação. "
-     "Se fechar negócio, combinamos o envio."),
-    ("Como funciona a pré-venda?",
-     "Você garante a unidade pagando na hora, e o envio sai na data indicada no anúncio. Se a "
-     "distribuidora atrasar, avisamos por e-mail e a devolução fica disponível a qualquer momento."),
+     "Não. A HOTARU é uma loja 100% virtual, sem endereço para visitar."),
     ("Onde aprendo mais sobre colecionar cartas?",
      f'No nosso <a href="{YT}" target="_blank" rel="noopener">canal do YouTube</a>, @Ericthm_, '
      "onde a gente ensina mais sobre colecionismo de cartas."),
+    ("Como falo com a HOTARU?",
+     'Pelo e-mail <a href="mailto:hotaru.loja@gmail.com">hotaru.loja@gmail.com</a>.'),
 ]
 
 faq_html = "\n".join(
@@ -666,64 +582,13 @@ ajuda = f'''
   <div class="wrap">
     <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Ajuda</p>
     <h1>Ajuda</h1>
-    <p>Prazos, trocas, embalagem e como a gente avalia carta. Se faltar alguma coisa aqui, chame no WhatsApp.</p>
+    <p>Ficou alguma dúvida? Escreva para hotaru.loja@gmail.com.</p>
   </div>
 </div>
 
-<div class="wrap" style="padding-top:44px">
-  <div class="helpnav">
-    <a href="#faq">Perguntas frequentes</a>
-    <a href="#fretes">Prazos e fretes</a>
-    <a href="#trocas">Trocas e devoluções</a>
-    <a href="#pagamento">Pagamento</a>
-  </div>
-</div>
-
-<section class="wrap" style="padding-top:0" id="faq">
+<section class="wrap" id="faq">
   <div class="section-head"><div><p class="eyebrow">Dúvidas</p><h2>Perguntas frequentes</h2></div></div>
   <div class="faq">{faq_html}</div>
-</section>
-
-<section class="wrap" id="fretes">
-  <div class="section-head"><div><p class="eyebrow">Envio</p><h2>Prazos e fretes</h2>
-    <p>Prazos em dias úteis, contados da confirmação do pagamento.</p></div></div>
-  <div class="ship scroller">
-    <table>
-      <thead><tr><th>Destino</th><th>Prazo</th><th>Frete</th><th>Acima de R$ 249</th></tr></thead>
-      <tbody>
-        <tr><td>Recife e região metropolitana</td><td>1 a 2 dias</td><td>R$ 14,90</td><td>Grátis</td></tr>
-        <tr><td>Interior de Pernambuco</td><td>2 a 4 dias</td><td>R$ 21,90</td><td>Grátis</td></tr>
-        <tr><td>Capitais do Nordeste</td><td>3 a 5 dias</td><td>R$ 26,90</td><td>Grátis</td></tr>
-        <tr><td>Sudeste e Centro-Oeste</td><td>4 a 7 dias</td><td>R$ 32,90</td><td>Grátis</td></tr>
-        <tr><td>Sul</td><td>5 a 8 dias</td><td>R$ 34,90</td><td>Grátis</td></tr>
-        <tr><td>Norte</td><td>6 a 9 dias</td><td>R$ 39,90</td><td>Grátis</td></tr>
-      </tbody>
-    </table>
-  </div>
-</section>
-
-<section class="wrap" id="trocas">
-  <div class="section-head"><div><p class="eyebrow">Depois da compra</p><h2>Trocas e devoluções</h2></div></div>
-  <div class="story">
-    <p>Sete dias corridos a partir do recebimento, para qualquer item, desde que ele volte do jeito
-    que chegou — selado ainda lacrado, single ainda no toploader.</p>
-    <p>Se o item chegou diferente do anunciado, danificado ou trocado, o erro é nosso: a gente manda
-    a etiqueta de devolução e você escolhe entre reembolso integral ou a unidade correta.</p>
-    <p>Para desistência sem defeito, o frete de retorno fica por conta de quem comprou. O reembolso
-    sai em até 5 dias úteis depois de o item voltar para a gente e ser conferido.</p>
-  </div>
-</section>
-
-<section class="wrap" id="pagamento">
-  <div class="section-head"><div><p class="eyebrow">Formas de pagamento</p><h2>Como dá para pagar</h2></div></div>
-  <div class="values">
-    <div class="value"><svg viewBox="0 0 24 24"><use href="#i-star"/></svg>
-      <h3>PIX com 10% off</h3><p>Desconto aplicado no checkout. A confirmação costuma sair em segundos e o pedido entra na fila na hora.</p></div>
-    <div class="value"><svg viewBox="0 0 24 24"><use href="#i-cards"/></svg>
-      <h3>Cartão em até 6x</h3><p>Sem juros a partir de R$ 120, nas bandeiras Visa, Mastercard e Elo. Parcela mínima de R$ 20.</p></div>
-    <div class="value"><svg viewBox="0 0 24 24"><use href="#i-shield"/></svg>
-      <h3>Boleto</h3><p>Compensa em até 3 dias úteis. O estoque fica reservado enquanto o boleto estiver dentro do prazo.</p></div>
-  </div>
 </section>
 '''
 

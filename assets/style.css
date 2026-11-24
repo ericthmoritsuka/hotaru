@@ -543,7 +543,7 @@ section { padding: 76px 0; }
 .foot a { text-decoration: none; color: inherit; }
 .foot a:hover { color: var(--gold-lt); }
 
-.foot-top { display: grid; grid-template-columns: 1.4fr 1fr 1fr 1fr; gap: 40px; padding: 62px 0 46px; }
+.foot-top { display: grid; grid-template-columns: 2fr 1fr; gap: 40px; padding: 62px 0 46px; }
 .foot h4 { font: 600 11px/1 var(--sans); letter-spacing: 0.18em; text-transform: uppercase; color: var(--gold-lt); margin: 0 0 18px; }
 .foot ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 11px; }
 .foot .about .word { height: 26px; width: auto; display: block; margin-bottom: 14px; }
