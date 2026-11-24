@@ -233,7 +233,8 @@ home = f'''
   </div>
 </section>
 
-<section class="wrap" id="conferencia">
+<section id="conferencia">
+  <div class="wrap">
   <div class="split">
     <div class="side">
       <p class="eyebrow">Singles</p>
@@ -252,6 +253,7 @@ home = f'''
         {tcard("m-sleeve", "Protegido")}
       </div>
     </div>
+  </div>
   </div>
 </section>
 

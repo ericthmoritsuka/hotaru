@@ -415,9 +415,9 @@ section { padding: 76px 0; }
 .split .art { position: relative; background: var(--ivory); display: grid; place-items: center; padding: 42px; }
 .split .art .fan { display: flex; }
 .split .art .fan .tcard { width: 150px; }
-.split .art .fan .tcard:nth-child(1) { transform: rotate(-13deg) translateX(26px); }
+.split .art .fan .tcard:nth-child(1) { transform: rotate(-13deg) translateX(14px); }
 .split .art .fan .tcard:nth-child(2) { transform: translateY(-14px); z-index: 2; }
-.split .art .fan .tcard:nth-child(3) { transform: rotate(13deg) translateX(-26px); }
+.split .art .fan .tcard:nth-child(3) { transform: rotate(13deg) translateX(-14px); }
 
 /* ---------- Nossa história ---------- */
 
@@ -705,7 +705,10 @@ section { padding: 76px 0; }
   .wrap { padding: 0 18px; }
   .split { grid-template-columns: minmax(0, 1fr); }
   .split .side { padding: 40px 24px; }
-  .split .art .fan .tcard { width: 112px; }
+  .split .art .fan .tcard { width: 104px; }
+  /* Menos sobreposição no celular, para a carta do meio não cobrir o rótulo das laterais. */
+  .split .art .fan .tcard:nth-child(1) { transform: rotate(-11deg) translateX(10px); }
+  .split .art .fan .tcard:nth-child(3) { transform: rotate(11deg) translateX(-10px); }
   section { padding: 54px 0; }
 
   /* Cabeçalho do celular: marca e ícones em cima, navegação numa faixa
