@@ -1174,3 +1174,15 @@ section { padding: 76px 0; }
 .admin-status { color: var(--gold-dk); font-weight: 600; margin: 6px 0 0; }
 .admin-status:empty { display: none; }
 .admin-actions { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 10px; }
+
+/* As cartas da hero são atalhos das categorias; com duas, ficam lado a
+   lado. Uma terceira categoria volta ao leque de três (.hero-cards). */
+a.tcard { display: block; color: inherit; text-decoration: none; cursor: pointer; }
+a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
+.hero-cards-2 .tcard:nth-child(1) { left: 6%; top: 34px; transform: rotate(-7deg); z-index: 2; }
+.hero-cards-2 .tcard:nth-child(2) { left: 44%; top: 6px; transform: rotate(6deg); z-index: 1; }
+.hero-cards-2 .tcard:hover, .hero-cards-2 .tcard:focus-visible { transform: translateY(-10px) rotate(0deg); z-index: 5; }
+@media (max-width: 480px) {
+  .hero-cards-2 .tcard:nth-child(1) { left: 4%; }
+  .hero-cards-2 .tcard:nth-child(2) { left: 46%; }
+}

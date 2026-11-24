@@ -138,14 +138,16 @@ def corners():
     )
 
 
-def tcard(motif, label, cls=""):
-    return f'''<div class="tcard {cls}">
+def tcard(motif, label, cls="", href=None, title=None):
+    # Com href, a carta é um link: as cartas da hero levam às categorias.
+    tag, attrs = ("a", f' href="{href}" aria-label="{title or label}"') if href else ("div", "")
+    return f'''<{tag} class="tcard {cls}"{attrs}>
   <div class="tcard-inner">
     {corners()}
     <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#{motif}"/></svg>
     <span class="label">{label}</span>
   </div>
-</div>'''
+</{tag}>'''
 
 
 def card(p):
@@ -241,11 +243,12 @@ home = f'''
         <a class="btn btn-ghost" href="{YT}" target="_blank" rel="noopener">Ver o canal</a>
       </div>
     </div>
-    <div class="hero-cards">
-      {tcard("m-booster", "Selados")}
-      {tcard("m-card", "Singles")}
-      {tcard("m-sleeve", "Coleção")}
-    </div>
+    <!-- Uma carta por categoria à venda (Eric, 2026-11-24): cada uma leva à
+         sua página. Uma categoria nova ganha a sua carta aqui. -->
+    <nav class="hero-cards hero-cards-2" aria-label="Categorias">
+      {tcard("m-card", "Singles", href="avulsas.html", title="Ver as cartas avulsas")}
+      {tcard("m-booster", "Selados", href="selados.html", title="Ver os selados")}
+    </nav>
   </div>
 </section>
 
