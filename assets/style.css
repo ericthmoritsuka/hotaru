@@ -483,47 +483,35 @@ section { padding: 76px 0; }
 /* ---------- Canal no YouTube ---------- */
 
 .ytbox {
-  position: relative;
-  display: block;
-  aspect-ratio: 4 / 3.2;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 14px;
   border-radius: 16px;
   background:
-    radial-gradient(circle at 50% 42%, rgba(214, 242, 75, 0.16), transparent 46%),
+    radial-gradient(circle at 50% 30%, rgba(214, 242, 75, 0.12), transparent 55%),
     linear-gradient(150deg, var(--navy-mid), var(--navy-deep));
   border: 1px solid var(--navy-line);
-  overflow: hidden;
   box-shadow: var(--shadow-sm);
-  color: var(--ink);
-  text-decoration: none;
 }
 
-.ytbox .play {
-  position: absolute;
-  top: 42%; left: 50%;
-  width: 96px; height: 96px;
-  margin: -48px 0 0 -48px;
-  color: var(--gold-lt);
-  filter: drop-shadow(0 0 18px var(--lime-glow));
-  transition: transform .2s ease;
-}
-
-.ytbox .play svg { width: 100%; height: 100%; }
-.ytbox:hover .play { transform: scale(1.06); }
+.ytframe { aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--navy-deep); }
+.ytframe iframe { display: block; width: 100%; height: 100%; border: 0; }
 
 .ytbox .plate {
-  position: absolute;
-  left: 18px; bottom: 18px; right: 18px;
+  display: block;
   background: rgba(255, 255, 255, 0.94);
-  border: 1px solid rgba(14, 31, 71, 0.1);
   border-radius: 10px;
   padding: 13px 16px;
   font-size: 0.82rem;
   line-height: 1.5;
   color: var(--ink-soft);
+  text-decoration: none;
 }
 
 .ytbox .plate b { display: block; font-family: var(--serif); font-size: 0.96rem; color: var(--ink); }
 .ytbox .plate em { display: block; margin-top: 4px; font-style: normal; font-weight: 600; color: var(--gold-dk); }
+.ytbox .plate:hover em { text-decoration: underline; }
 
 /* ---------- Newsletter ---------- */
 
@@ -536,6 +524,7 @@ section { padding: 76px 0; }
 .news .eyebrow { color: var(--lime); }
 
 .field { display: flex; gap: 10px; max-width: 460px; margin: 0 auto; }
+.field input { min-width: 0; }
 .field input {
   flex: 1;
   background: rgba(247, 239, 220, 0.07);

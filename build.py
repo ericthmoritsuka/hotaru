@@ -187,14 +187,19 @@ def page(name, title, body, active=None):
 
 YT = "https://www.youtube.com/@Ericthm_"
 
-CANAL = f'''<a class="ytbox" href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">
-      <span class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-yt"/></svg></span>
-      <span class="plate">
+CANAL = f'''<div class="ytbox">
+      <div class="ytframe">
+        <iframe src="https://www.youtube-nocookie.com/embed/videoseries?list=UU9bwv82L_f3oiDR4qchr_pA"
+          title="Vídeos mais recentes do canal Ericthm no YouTube" loading="lazy"
+          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+      </div>
+      <a class="plate" href="{YT}" target="_blank" rel="noopener">
         <b>Canal no YouTube</b>
         @Ericthm_ · colecionismo de cartas
-        <em>Assistir no YouTube &rarr;</em>
-      </span>
-    </a>'''
+        <em>Ver o canal no YouTube &rarr;</em>
+      </a>
+    </div>'''
 
 cats_html = "\n".join(
     f'''<a class="cat" href="loja.html#{slug}">
