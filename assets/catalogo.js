@@ -40,6 +40,53 @@
 		'zh-tw': 'Chinês tradicional',
 	};
 
+	// Raridades em português, com os nomes da lista em português do próprio
+	// TCGdex (api.tcgdex.net/v2/pt/rarities, lida em 2026-11-24), com as
+	// maiúsculas uniformizadas e "Rare Secreta" corrigida para Rara Secreta.
+	// O tracker publica a raridade em inglês; uma que não está aqui aparece
+	// como veio, como Futuristic Rare, que o TCGdex também não traduz.
+	const RARITIES = {
+		'ace spec rare': 'ACE SPEC Raro',
+		'amazing rare': 'Raras Incríveis',
+		'black white rare': 'Rara Preto e Branco',
+		common: 'Comum',
+		'double rare': 'Rara Dupla',
+		'full art trainer': 'Arte Completa de Treinador',
+		'holo rare': 'Rara Holo',
+		'holo rare v': 'Rara Holo V',
+		'holo rare vmax': 'Rara Holo VMAX',
+		'holo rare vstar': 'Rara Holo VSTAR',
+		'hyper rare': 'Hiper Rara',
+		'illustration rare': 'Ilustração Rara',
+		'mega hyper rare': 'Mega Hiper Raro',
+		promo: 'Promo',
+		'radiant rare': 'Rara Radiante',
+		rare: 'Rara',
+		'rare holo': 'Rara Holo',
+		'secret rare': 'Rara Secreta',
+		'shiny rare': 'Shiny Rara',
+		'shiny rare v': 'Shiny Rara V',
+		'shiny rare vmax': 'Shiny Rara VMAX',
+		'shiny ultra rare': 'Brilhante Ultra Rara',
+		'special illustration rare': 'Ilustração Rara Especial',
+		'ultra rare': 'Ultra Rara',
+		uncommon: 'Incomum',
+	};
+
+	const rarityName = (rarity) => (rarity && String(rarity).toLowerCase() !== 'none' ? RARITIES[String(rarity).toLowerCase()] || rarity : null);
+
+	// O acabamento como o tracker escreve ("Normal, 30th anniversary
+	// stamp"): as palavras em inglês que têm nome claro em português.
+	const FINISH_WORDS = [
+		[/\b30th anniversary stamp\b/gi, 'carimbo de 30 anos'],
+		[/\b1st edition\b/gi, '1ª edição'],
+		[/\bunlimited\b/gi, 'Ilimitada'],
+		[/\bshadowless\b/gi, 'Sem sombra'],
+		[/\breverse holo\b/gi, 'Reverse Holo'],
+	];
+
+	const finishName = (finish) => FINISH_WORDS.reduce((text, [pattern, word]) => text.replace(pattern, word), String(finish || '')) || null;
+
 	const languageName = (code) => LANGUAGES[String(code || '').toLowerCase()] || (code ? String(code).toUpperCase() : '');
 
 	const brl = (value) => {
@@ -120,7 +167,7 @@
 					newest: '',
 					number: row.number,
 					price: Infinity,
-					rarity: row.rarity,
+					rarity: rarityName(row.rarity),
 					setName: row.set_name,
 				});
 			}
@@ -137,7 +184,7 @@
 			}
 
 			if (row.finish) {
-				group.finishes.add(row.finish);
+				group.finishes.add(finishName(row.finish));
 			}
 		}
 
