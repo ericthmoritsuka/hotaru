@@ -4,15 +4,24 @@
 // etapa 3). Não há build: um preço salvo no tracker aparece aqui na próxima
 // visita.
 //
-// Três lugares usam o mesmo script, cada um marcado por data-catalog:
+// Quatro lugares usam o mesmo script, cada um marcado por data-catalog:
 //   home    na home, as cartas mais recentes, logo depois da hero; a seção
 //           inteira fica escondida quando não há nenhuma carta à venda
 //   all     avulsas.html, todas as cartas, com busca e filtros
-//   card    carta.html?c=<id da carta>&l=<idioma>, uma carta
+//   card    carta.html?c=<id da carta>&l=<idioma>, uma carta, com Adicionar
+//           ao carrinho
+//   order   pedido.html, o carrinho, o pedido e o Pix
+// Toda página carrega o script, para o link Carrinho do cabeçalho mostrar
+// quantas cartas há nele.
 //
-// Até o carrinho existir (etapa 5), comprar é mandar um e-mail: o botão abre
-// o e-mail da HOTARU com a carta no assunto. O site não fala em frete,
-// envio, parcelamento ou formas de pagamento enquanto nada disso existe.
+// Comprar (etapa 5, regras do Eric em 2026-11-24): o carrinho fica neste
+// navegador e não reserva nada; muitas pessoas podem ter a mesma carta no
+// carrinho. Quem fecha o pedido primeiro fica com ela (place_order no
+// Supabase), e ela some do catálogo. O carrinho aberto avisa quando uma
+// carta foi reservada por outra pessoa ou não está mais à venda. Fechado o
+// pedido, a página mostra o Pix copia e cola e o QR Code (assets/pix.js);
+// sem pagamento em 48 horas, o pedido é cancelado e as cartas voltam. O
+// site não fala em frete, envio ou parcelamento, que não existem.
 //
 // Todo texto vindo do banco entra na página como texto (textContent), nunca
 // como HTML.
@@ -34,6 +43,11 @@
 	// asiático (ja, ko, zh-tw...) é lido pelo próprio código.
 	const WESTERN = new Set(['de', 'en', 'es', 'fr', 'it', 'pt']);
 	const HOME_LIMIT = 8;
+	const CART_KEY = 'hotaru.cart';
+	const LAST_ORDER_KEY = 'hotaru.lastOrder';
+	// O carrinho aberto confere as cartas a cada minuto.
+	const RECHECK_MS = 60000;
+	const MAX_ORDER = 20;
 
 	const LANGUAGES = {
 		de: 'Alemão',
@@ -134,21 +148,78 @@
 		return node;
 	}
 
-	async function readCatalog() {
-		const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/store_catalog`, {
-			body: '{}',
+	// Chama uma função pública do Supabase. Lança o erro do banco, com a
+	// mensagem dele, quando a resposta não é 2xx.
+	async function rpc(name, args = {}) {
+		const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+			body: JSON.stringify(args),
 			headers: {apikey: SUPABASE_KEY, 'Content-Type': 'application/json'},
 			method: 'POST',
 		});
+		const body = await response.json().catch(() => null);
 
 		if (!response.ok) {
-			throw new Error(`store_catalog ${response.status}`);
+			throw Object.assign(new Error((body && body.message) || `${name} ${response.status}`), {code: body && body.code});
 		}
 
-		const rows = await response.json();
+		return body;
+	}
+
+	async function readCatalog() {
+		const rows = await rpc('store_catalog');
 
 		return Array.isArray(rows) ? rows : [];
 	}
+
+	// ------------------------------------------------------------ cart
+
+	// O carrinho: as cópias escolhidas, com o que a página precisa para
+	// mostrá-las sem ler o catálogo de novo.
+	function readCart() {
+		try {
+			const value = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
+
+			return Array.isArray(value) ? value.filter((item) => item && typeof item.id === 'string') : [];
+		}
+		catch {
+			return [];
+		}
+	}
+
+	function writeCart(items) {
+		try {
+			localStorage.setItem(CART_KEY, JSON.stringify(items));
+		}
+		catch {
+			// Sem armazenamento: o carrinho dura só esta página.
+		}
+
+		drawCartCount(items);
+	}
+
+	function drawCartCount(items = readCart()) {
+		for (const node of document.querySelectorAll('[data-cart-count]')) {
+			node.textContent = String(items.length);
+			node.hidden = !items.length;
+		}
+
+		for (const link of document.querySelectorAll('.cart-link')) {
+			link.setAttribute('aria-label', items.length === 1 ? 'Carrinho, 1 carta' : `Carrinho, ${items.length} cartas`);
+		}
+	}
+
+	const cartItem = (row) => ({
+		cardId: row.card_id,
+		condition: row.condition || null,
+		finish: row.finish ? finishName(row.finish) : null,
+		id: row.id,
+		imagePath: row.image_path || null,
+		language: row.language || '',
+		name: row.name,
+		number: row.number || null,
+		price: Number(row.price_brl),
+		setName: row.set_name || null,
+	});
 
 	// Uma carta à venda por carta e idioma, com quantas cópias há, os
 	// estados e acabamentos delas e o menor preço.
@@ -347,12 +418,76 @@
 				el('h1', null, group.name),
 				el('p', {class: 'card-price'}, brl(group.price)),
 				factList,
-				el('a', {class: 'btn btn-gold', href: mailto(group)}, 'Quero esta carta'),
-				el('p', {class: 'card-how'}, `Para comprar, mande um e-mail para ${EMAIL} (o botão já abre com a carta escrita). A entrega é combinada com você.`),
+				buyBox(group),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: ela fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('p', {class: 'card-how'}, 'Dúvidas? ', el('a', {href: mailto(group)}, `Escreva para ${EMAIL}`), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
 		));
 		addArtist(group, factList);
+	}
+
+	// Adicionar ao carrinho: uma linha por estado, acabamento e preço, com
+	// quantas cópias ainda não estão no carrinho.
+	function buyBox(group) {
+		const box = el('div', {class: 'buy-box'});
+
+		function draw() {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const variants = new Map();
+
+			for (const row of group.copies) {
+				const key = [row.condition || '', row.finish || '', row.price_brl].join('|');
+
+				if (!variants.has(key)) {
+					variants.set(key, {free: [], row, total: 0});
+				}
+
+				const variant = variants.get(key);
+
+				variant.total++;
+
+				if (!inCart.has(row.id)) {
+					variant.free.push(row);
+				}
+			}
+
+			const lines = [...variants.values()].map(({free, row, total}) => {
+				const label = [row.condition, row.finish ? finishName(row.finish) : null].filter(Boolean).join(' · ') || 'Cópia';
+				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
+					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
+				const button = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+					const n = Number(qty.value) || 1;
+					const cart = readCart();
+
+					if (cart.length + n > MAX_ORDER) {
+						status.textContent = `Um pedido leva até ${MAX_ORDER} cartas.`;
+
+						return;
+					}
+
+					writeCart([...cart, ...free.slice(0, n).map(cartItem)]);
+					draw();
+					status.replaceChildren(n === 1 ? 'Adicionada ao carrinho. ' : `${n} adicionadas ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+				}, type: 'button'}, 'Adicionar ao carrinho');
+				const inside = total - free.length;
+
+				return el('div', {class: 'buy-line'},
+					el('p', {class: 'buy-label'}, el('strong', null, label), ` · ${brl(row.price_brl)} · ${available(total)}`),
+					free.length
+						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
+						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
+					inside && free.length ? el('p', {class: 'buy-in'}, inside === 1 ? '1 já está no seu carrinho.' : `${inside} já estão no seu carrinho.`) : null
+				);
+			});
+			const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
+
+			box.replaceChildren(...lines, status);
+		}
+
+		draw();
+
+		return box;
 	}
 
 	// O artista da carta, do TCGdex: no idioma da cópia, depois em inglês.
@@ -405,10 +540,288 @@
 
 	// ----------------------------------------------------------- start
 
+	// ----------------------------------------------------------- order
+
+	const when = (iso) => new Date(iso).toLocaleString('pt-BR', {day: '2-digit', hour: '2-digit', minute: '2-digit', month: '2-digit', timeZone: 'America/Recife'});
+
+	const NOTICES = {
+		gone: ['Não está mais disponível.', 'Esta carta foi vendida ou saiu do catálogo.'],
+		reserved: ['Temporariamente indisponível.', 'Outra pessoa fechou um pedido com esta carta. Se a compra não for concluída, ela volta ao catálogo.'],
+	};
+
+	function readLastOrder() {
+		try {
+			const value = JSON.parse(localStorage.getItem(LAST_ORDER_KEY) || 'null');
+
+			return value && value.code ? value : null;
+		}
+		catch {
+			return null;
+		}
+	}
+
+	function keepLastOrder(order) {
+		try {
+			localStorage.setItem(LAST_ORDER_KEY, JSON.stringify(order));
+		}
+		catch {
+			// Sem armazenamento: o Pix fica só nesta página.
+		}
+	}
+
+	// O pedido fechado: o código, o total, o prazo e o Pix.
+	function confirmation(order) {
+		const Pix = window.HotaruPix;
+		const code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+		const copyStatus = el('span', {'aria-live': 'polite', class: 'pix-copied'});
+		const qr = el('div', {'aria-label': `QR Code do Pix de ${brl(order.total)}`, class: 'pix-qr', role: 'img'});
+
+		if (code && window.qrcode) {
+			const made = window.qrcode(0, 'M');
+
+			made.addData(code);
+			made.make();
+			// Um SVG feito pela biblioteca a partir do código acima, que só
+			// tem caracteres que este script mesmo escreveu.
+			qr.innerHTML = made.createSvgTag({margin: 2, scalable: true});
+		}
+
+		return el('div', {class: 'order-done'},
+			el('p', {class: 'eyebrow'}, 'Pedido recebido'),
+			el('h2', null, `Pedido ${order.code}`),
+			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
+			el('p', null, `Pague com Pix até ${when(order.reservedUntil)}. Até lá, as cartas ficam reservadas para você.`),
+			code ? el('div', {class: 'pix'},
+				qr,
+				el('label', {class: 'pix-label', for: 'pix-code'}, 'Pix copia e cola'),
+				el('textarea', {class: 'pix-code', id: 'pix-code', readonly: true, rows: 3}, code),
+				el('div', {class: 'pix-actions'},
+					el('button', {class: 'btn btn-gold', onclick: async () => {
+						try {
+							await navigator.clipboard.writeText(code);
+							copyStatus.textContent = 'Copiado!';
+						}
+						catch {
+							document.getElementById('pix-code').select();
+							copyStatus.textContent = 'Selecionado: copie com o menu do celular.';
+						}
+					}, type: 'button'}, 'Copiar código Pix'),
+					copyStatus
+				),
+				el('p', {class: 'pix-who'}, `Quem recebe: ${Pix.RECEIVER.name}. No app do banco aparece o nome completo do Eric.`)
+			) : message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.'),
+			el('p', null, 'Depois de pagar, é só aguardar: o Eric confere o pagamento e combina a entrega com você pelo telefone que você deixou. Sem pagamento até o prazo, o pedido é cancelado e as cartas voltam para o catálogo.'),
+			el('ul', {class: 'order-items'}, (order.items || []).map((item) => el('li', null, `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`))),
+			el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Continuar vendo as cartas')
+		);
+	}
+
+	function order(root) {
+		let statuses = {};
+		let busy = false;
+		let notice = '';
+		let timer = null;
+
+		const form = el('form', {class: 'order-form', novalidate: true});
+		const nameInput = el('input', {autocomplete: 'name', id: 'order-name', maxlength: 80, required: true, type: 'text'});
+		const phoneInput = el('input', {autocomplete: 'tel', id: 'order-phone', inputmode: 'tel', maxlength: 40, required: true, type: 'text'});
+		const noteInput = el('textarea', {id: 'order-note', maxlength: 500, rows: 2});
+		const formError = el('p', {class: 'order-error', role: 'alert'});
+		const submit = el('button', {class: 'btn btn-gold', id: 'order-submit', type: 'submit'}, 'Fechar pedido');
+		const list = el('ul', {class: 'cart-list'});
+		const totalLine = el('p', {class: 'cart-total'});
+		const noticeLine = el('p', {'aria-live': 'polite', class: 'cart-notice'});
+
+		form.append(
+			el('label', {for: 'order-name'}, 'Seu nome'), nameInput,
+			el('label', {for: 'order-phone'}, 'Telefone ou ramal'), phoneInput,
+			el('label', {for: 'order-note'}, 'Observação (opcional)'), noteInput,
+			el('p', {class: 'order-privacy'}, 'Seu nome e telefone só servem para o Eric combinar a entrega com você.'),
+			formError,
+			submit
+		);
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			close();
+		});
+
+		const OFFLINE = 'Não foi possível conferir as cartas agora. Tente de novo em instantes.';
+		const freeItems = () => readCart().filter((item) => statuses[item.id] === 'available');
+
+		function remove(id) {
+			writeCart(readCart().filter((item) => item.id !== id));
+			draw();
+		}
+
+		function draw() {
+			const cart = readCart();
+
+			if (!cart.length) {
+				stopTimer();
+
+				// O último pedido, enquanto o prazo para pagar não acabou.
+				const last = readLastOrder();
+				const open = last && Date.parse(last.reservedUntil) > Date.now();
+
+				root.replaceChildren(...(open ? [confirmation(last)] : [message('Seu carrinho está vazio.'), el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Ver as cartas à venda')]));
+
+				return;
+			}
+
+			list.replaceChildren(...cart.map((item) => {
+				const status = statuses[item.id];
+				const off = status === 'reserved' || status === 'gone';
+
+				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
+					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
+					el('div', {class: 'cart-body'},
+						el('p', {class: 'cart-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}`}, item.name)),
+						el('p', {class: 'cart-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
+						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, NOTICES[status][0]), ` ${NOTICES[status][1]}`) : null,
+						el('p', {class: 'cart-price'}, brl(item.price))
+					),
+					el('button', {'aria-label': `Remover ${item.name}`, class: 'cart-remove', onclick: () => remove(item.id), type: 'button'}, 'Remover')
+				);
+			}));
+
+			const free = freeItems();
+			const total = free.reduce((sum, item) => sum + item.price, 0);
+			const checked = cart.every((item) => statuses[item.id]);
+
+			totalLine.textContent = free.length ? `Total: ${brl(total)} (${free.length === 1 ? '1 carta' : `${free.length} cartas`})` : '';
+			noticeLine.textContent = notice;
+			submit.textContent = free.length ? `Fechar pedido com ${free.length === 1 ? '1 carta' : `${free.length} cartas`}` : 'Fechar pedido';
+			submit.disabled = busy || !checked || !free.length;
+
+			if (!root.contains(form)) {
+				root.replaceChildren(
+					el('h2', {class: 'cart-head'}, 'Seu carrinho'),
+					noticeLine,
+					list,
+					totalLine,
+					el('h3', {class: 'order-head'}, 'Fechar o pedido'),
+					form
+				);
+			}
+		}
+
+		// Confere no Supabase quais cartas do carrinho ainda estão à venda.
+		async function check() {
+			const cart = readCart();
+
+			if (!cart.length) {
+				draw();
+
+				return true;
+			}
+
+			try {
+				statuses = await rpc('listing_status', {ids: cart.map((item) => item.id)}) || {};
+
+				if (notice === OFFLINE) {
+					notice = '';
+				}
+
+				return true;
+			}
+			catch {
+				notice = OFFLINE;
+
+				return false;
+			}
+			finally {
+				draw();
+			}
+		}
+
+		function stopTimer() {
+			if (timer) {
+				clearInterval(timer);
+				timer = null;
+			}
+		}
+
+		async function close() {
+			formError.textContent = '';
+			notice = '';
+
+			const name = nameInput.value.trim();
+			const phone = phoneInput.value.trim();
+
+			if (!name || !phone) {
+				formError.textContent = !name ? 'Escreva o seu nome.' : 'Escreva um telefone ou ramal para o Eric falar com você.';
+				(!name ? nameInput : phoneInput).focus();
+
+				return;
+			}
+
+			busy = true;
+			draw();
+
+			const fresh = await check();
+			const items = freeItems();
+
+			if (!fresh || !items.length) {
+				busy = false;
+				draw();
+
+				return;
+			}
+
+			let result;
+
+			try {
+				result = await rpc('place_order', {buyer_name: name, buyer_note: noteInput.value.trim() || null, buyer_phone: phone, items: items.map((item) => item.id)});
+			}
+			catch (err) {
+				busy = false;
+				formError.textContent = `O pedido não foi fechado. ${err.message || 'Tente de novo em instantes.'}`;
+				draw();
+
+				return;
+			}
+
+			if (result && Array.isArray(result.unavailable)) {
+				busy = false;
+				notice = 'Alguém fechou um pedido com uma das suas cartas antes de você. Confira o carrinho e feche de novo com as que sobraram.';
+				await check();
+
+				return;
+			}
+
+			const ordered = new Set(items.map((item) => item.id));
+			const done = {code: result.code, items, reservedUntil: result.reserved_until, total: Number(result.total)};
+
+			keepLastOrder(done);
+			writeCart(readCart().filter((item) => !ordered.has(item.id)));
+			busy = false;
+			stopTimer();
+			root.replaceChildren(confirmation(done));
+			window.scrollTo(0, 0);
+		}
+
+		draw();
+		check();
+		timer = setInterval(check, RECHECK_MS);
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible' && readCart().length && root.contains(form)) {
+				check();
+			}
+		});
+	}
+
 	const VIEWS = {all, card: one, home};
 
 	async function start() {
-		const roots = [...document.querySelectorAll('[data-catalog]')];
+		drawCartCount();
+
+		const orderRoot = document.querySelector('[data-catalog="order"]');
+
+		if (orderRoot) {
+			order(orderRoot);
+		}
+
+		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot);
 
 		if (!roots.length) {
 			return;
