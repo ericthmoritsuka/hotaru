@@ -207,6 +207,10 @@
 			node.hidden = !items.length;
 		}
 
+		for (const link of document.querySelectorAll('.orders-link')) {
+			link.hidden = !readOrders().length;
+		}
+
 		for (const link of document.querySelectorAll('.cart-link')) {
 			link.setAttribute('aria-label', items.length === 1 ? 'Carrinho, 1 carta' : `Carrinho, ${items.length} cartas`);
 		}
@@ -553,6 +557,38 @@
 		reserved: ['Temporariamente indisponível.', 'Outra pessoa fechou um pedido com esta carta. Se a compra não for concluída, ela volta ao catálogo.'],
 	};
 
+	// Meus pedidos: os pedidos feitos neste navegador, mais novos primeiro,
+	// cada um pelo seu código secreto.
+	const ORDERS_KEY = 'hotaru.orders';
+
+	function readOrders() {
+		try {
+			const value = JSON.parse(localStorage.getItem(ORDERS_KEY) || '[]');
+
+			return Array.isArray(value) ? value.filter((one) => one && typeof one.token === 'string') : [];
+		}
+		catch {
+			return [];
+		}
+	}
+
+	function rememberOrder(token) {
+		if (!/^[0-9a-f-]{36}$/i.test(String(token || ''))) {
+			return;
+		}
+
+		try {
+			const kept = readOrders().filter((one) => one.token !== token);
+
+			localStorage.setItem(ORDERS_KEY, JSON.stringify([{at: new Date().toISOString(), token}, ...kept].slice(0, 50)));
+		}
+		catch {
+			// Sem armazenamento: o link privado ainda abre o pedido.
+		}
+
+		drawCartCount();
+	}
+
 	function readLastOrder() {
 		try {
 			const value = JSON.parse(localStorage.getItem(LAST_ORDER_KEY) || 'null');
@@ -657,14 +693,23 @@
 		return box;
 	}
 
-	// O pedido fechado: o código, o total, o prazo e o Pix.
-	function confirmation(order) {
+	// O Pix de um pedido aberto: o QR Code, o copia e cola e o botão de
+	// copiar. Os IDs levam o código do pedido, porque Meus pedidos pode
+	// mostrar mais de um.
+	function pixBlock(order) {
 		const Pix = window.HotaruPix;
 		const code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+
+		if (!code) {
+			return message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.');
+		}
+
+		const id = `pix-code-${order.code}`;
 		const copyStatus = el('span', {'aria-live': 'polite', class: 'pix-copied'});
 		const qr = el('div', {'aria-label': `QR Code do Pix de ${brl(order.total)}`, class: 'pix-qr', role: 'img'});
+		const text = el('textarea', {class: 'pix-code', id, readonly: true, rows: 3}, code);
 
-		if (code && window.qrcode) {
+		if (window.qrcode) {
 			const made = window.qrcode(0, 'M');
 
 			made.addData(code);
@@ -674,34 +719,71 @@
 			qr.innerHTML = made.createSvgTag({margin: 2, scalable: true});
 		}
 
+		return el('div', {class: 'pix'},
+			qr,
+			el('label', {class: 'pix-label', for: id}, 'Pix copia e cola'),
+			text,
+			el('div', {class: 'pix-actions'},
+				el('button', {class: 'btn btn-gold', onclick: () => copy(code, text, copyStatus), type: 'button'}, 'Copiar código Pix'),
+				copyStatus
+			),
+			el('p', {class: 'pix-who'}, `Quem recebe: ${Pix.RECEIVER.name}. No app do banco aparece o nome completo do Eric.`)
+		);
+	}
+
+	async function copy(value, field, status) {
+		try {
+			await navigator.clipboard.writeText(value);
+			status.textContent = 'Copiado!';
+		}
+		catch {
+			field.select();
+			status.textContent = 'Selecionado: copie com o menu do celular.';
+		}
+	}
+
+	// O link privado de um pedido: abre o pedido em qualquer aparelho.
+	const orderLink = (token) => new URL(`meus-pedidos.html?p=${encodeURIComponent(token)}`, window.location.href).href;
+
+	function linkBlock(order) {
+		if (!order.receiptToken) {
+			return null;
+		}
+
+		const link = orderLink(order.receiptToken);
+		const id = `order-link-${order.code}`;
+		const status = el('span', {'aria-live': 'polite', class: 'pix-copied'});
+		const field = el('input', {class: 'order-link-field', id, readonly: true, type: 'text', value: link});
+
+		return el('div', {class: 'order-link'},
+			el('label', {for: id}, 'Link privado deste pedido'),
+			el('p', null, 'Guarde o link (ou mande para você mesmo) para ver o pedido em outro aparelho. Quem tem o link vê o pedido.'),
+			field,
+			el('div', {class: 'pix-actions'},
+				el('button', {class: 'btn btn-navy', onclick: () => copy(link, field, status), type: 'button'}, 'Copiar link'),
+				status
+			)
+		);
+	}
+
+	const itemText = (item) => `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`;
+
+	// O pedido fechado: o código, o total, o prazo e o Pix.
+	function confirmation(order) {
 		return el('div', {class: 'order-done'},
 			el('p', {class: 'eyebrow'}, 'Pedido recebido'),
 			el('h2', null, `Pedido ${order.code}`),
 			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
 			el('p', null, `Pague com Pix até ${when(order.reservedUntil)}. Até lá, as cartas ficam reservadas para você.`),
-			code ? el('div', {class: 'pix'},
-				qr,
-				el('label', {class: 'pix-label', for: 'pix-code'}, 'Pix copia e cola'),
-				el('textarea', {class: 'pix-code', id: 'pix-code', readonly: true, rows: 3}, code),
-				el('div', {class: 'pix-actions'},
-					el('button', {class: 'btn btn-gold', onclick: async () => {
-						try {
-							await navigator.clipboard.writeText(code);
-							copyStatus.textContent = 'Copiado!';
-						}
-						catch {
-							document.getElementById('pix-code').select();
-							copyStatus.textContent = 'Selecionado: copie com o menu do celular.';
-						}
-					}, type: 'button'}, 'Copiar código Pix'),
-					copyStatus
-				),
-				el('p', {class: 'pix-who'}, `Quem recebe: ${Pix.RECEIVER.name}. No app do banco aparece o nome completo do Eric.`)
-			) : message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.'),
+			pixBlock(order),
 			receiptBox(order),
 			el('p', null, 'Depois de pagar, é só aguardar: o Eric confere o pagamento e combina a entrega com você pelo telefone que você deixou. Sem pagamento até o prazo, o pedido é cancelado e as cartas voltam para o catálogo.'),
-			el('ul', {class: 'order-items'}, (order.items || []).map((item) => el('li', null, `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`))),
-			el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Continuar vendo as cartas')
+			el('ul', {class: 'order-items'}, (order.items || []).map((item) => el('li', null, itemText(item)))),
+			linkBlock(order),
+			el('div', {class: 'order-next'},
+				el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Continuar vendo as cartas'),
+				el('a', {class: 'order-mine', href: 'meus-pedidos.html'}, 'Meus pedidos')
+			)
 		);
 	}
 
@@ -896,6 +978,7 @@
 			const done = {code: result.code, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
 
 			keepLastOrder(done);
+			rememberOrder(done.receiptToken);
 			writeCart(readCart().filter((item) => !ordered.has(item.id)));
 			busy = false;
 			stopTimer();
@@ -913,10 +996,108 @@
 		});
 	}
 
+	// ------------------------------------------------------- my orders
+
+	const STATUS_TEXT = {
+		cancelled: 'Cancelado: as cartas voltaram para o catálogo.',
+		delivered: 'Entregue. Obrigado pela compra!',
+		expired: 'Vencido: o pagamento não chegou em 48 horas, e as cartas voltaram para o catálogo.',
+		paid: 'Pagamento confirmado. O Eric vai combinar a entrega com você.',
+	};
+
+	function leftText(iso) {
+		const minutes = Math.ceil((Date.parse(iso) - Date.now()) / 60000);
+
+		return minutes >= 60 ? `faltam ${Math.floor(minutes / 60)} h` : `faltam ${Math.max(minutes, 1)} min`;
+	}
+
+	// Um pedido como o Supabase o devolve (order_status), na forma que as
+	// peças do pedido usam.
+	const fromServer = (row) => ({
+		code: row.code,
+		createdAt: row.created_at,
+		items: (row.items || []).map((item) => ({imagePath: item.image_path, language: item.language, name: item.name, number: item.number, price: Number(item.price_brl), setName: item.set_name})),
+		receiptSent: Boolean(row.receipt_at),
+		receiptToken: row.token,
+		reservedUntil: row.reserved_until,
+		status: row.status === 'paid' && row.delivered_at ? 'delivered' : row.status,
+		total: Number(row.total),
+	});
+
+	function mineCard(order) {
+		const open = order.status === 'pending' && Date.parse(order.reservedUntil) > Date.now();
+		const state = open ? `Aguardando pagamento · ${leftText(order.reservedUntil)}` : STATUS_TEXT[order.status] || STATUS_TEXT.expired;
+
+		return el('article', {class: `mine-order mine-${open ? 'pending' : order.status}`, id: `mine-${order.code}`},
+			el('div', {class: 'mine-head'},
+				el('h2', null, `Pedido ${order.code}`),
+				el('p', {class: 'mine-date'}, `Feito em ${when(order.createdAt)}`)
+			),
+			el('p', {class: 'mine-state'}, state),
+			el('ul', {class: 'order-items'}, order.items.map((item) => el('li', null, itemText(item)))),
+			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
+			open ? el('p', null, `Pague com Pix até ${when(order.reservedUntil)}.`) : null,
+			open ? pixBlock(order) : null,
+			open ? receiptBox(order) : null,
+			linkBlock(order)
+		);
+	}
+
+	async function mine(root) {
+		const params = new URLSearchParams(window.location.search);
+		const shared = params.get('p');
+
+		if (shared) {
+			rememberOrder(shared);
+		}
+
+		const tokens = readOrders().map((one) => one.token);
+
+		if (!tokens.length) {
+			root.replaceChildren(
+				message('Nenhum pedido feito neste navegador ainda. Se você tem o link privado de um pedido, abra-o aqui.'),
+				el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Ver as cartas à venda')
+			);
+
+			return;
+		}
+
+		let rows;
+
+		try {
+			rows = await rpc('order_status', {tokens});
+		}
+		catch {
+			root.replaceChildren(message('Não foi possível ler os seus pedidos agora. Tente de novo em instantes.'));
+
+			return;
+		}
+
+		const orders = (Array.isArray(rows) ? rows : []).map(fromServer);
+		const first = shared ? orders.find((one) => one.receiptToken === shared) : null;
+
+		if (!orders.length) {
+			root.replaceChildren(message('Não encontramos esses pedidos. Se você tem o link privado de um pedido, confira se ele está completo.'));
+
+			return;
+		}
+
+		// O pedido do link aberto vem primeiro.
+		const shown = first ? [first, ...orders.filter((one) => one !== first)] : orders;
+
+		root.replaceChildren(...shown.map(mineCard));
+	}
+
 	const VIEWS = {all, card: one, home};
 
 	async function start() {
 		drawCartCount();
+
+		const mineRoot = document.querySelector('[data-catalog="mine"]');
+
+		if (mineRoot) {
+			mine(mineRoot);
+		}
 
 		const orderRoot = document.querySelector('[data-catalog="order"]');
 
@@ -924,7 +1105,7 @@
 			order(orderRoot);
 		}
 
-		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot);
+		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot);
 
 		if (!roots.length) {
 			return;

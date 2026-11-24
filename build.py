@@ -350,6 +350,24 @@ pedido = f'''
 page("pedido", "Carrinho — HOTARU", pedido)
 print("pedido.html")
 
+meus = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Meus pedidos</p>
+    <h1>Meus pedidos</h1>
+    <p>Os pedidos feitos neste navegador, ou abertos pelo link privado de um pedido.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="mine"><p class="card-note" role="status">Carregando os seus pedidos…</p></div>
+</section>
+{PEDIDO_JS}
+'''
+
+page("meus-pedidos", "Meus pedidos — HOTARU", meus)
+print("meus-pedidos.html")
+
 
 # --------------------------------------------------------------------------
 # Loja (catálogo)
