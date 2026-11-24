@@ -1113,3 +1113,21 @@ section { padding: 76px 0; }
 .mine-cancelled .mine-state, .mine-expired .mine-state { color: var(--ink-soft); }
 .mine-paid .mine-state, .mine-delivered .mine-state { color: #2f6b2a; }
 .mine-order .order-total { font-size: 1.1rem; }
+
+/* Adicionar ao carrinho direto da grade. */
+.card-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 6px; }
+.card-foot .card-count { margin: 0; }
+.quick-add {
+  display: inline-flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 999px;
+  border: 1px solid var(--gold); background: #fff; color: var(--navy); font: 600 0.76rem/1 var(--sans);
+  cursor: pointer; text-decoration: none; white-space: nowrap;
+}
+.quick-add svg { width: 16px; height: 16px; flex: none; display: block; }
+.quick-icon { display: inline-flex; }
+.quick-add:hover { background: var(--ivory); }
+.quick-add.quick-in { background: var(--navy); color: var(--ivory); border-color: var(--navy); }
+.quick-add:disabled { cursor: default; opacity: 0.85; }
+.quick-choose { border-color: rgba(14, 31, 71, 0.25); }
+@media (max-width: 480px) {
+  .card-foot { flex-direction: column; align-items: flex-start; }
+}

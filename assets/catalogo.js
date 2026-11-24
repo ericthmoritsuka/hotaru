@@ -294,6 +294,63 @@
 		return link ? el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner) : el('div', {class: 'shot card-shot'}, inner);
 	}
 
+	// O carrinho direto da grade (Eric, 2026-11-24): uma carta cujas cópias
+	// são todas iguais (estado, acabamento e preço) entra com um toque; uma
+	// com cópias diferentes leva à página da carta, para escolher qual.
+	const variantKey = (row) => [row.condition || '', row.finish || '', row.price_brl].join('|');
+
+	function quickAdd(group) {
+		const same = new Set(group.copies.map(variantKey)).size === 1;
+		// O ícone do sprite, o mesmo carrinho do cabeçalho; texto fixo, sem
+		// dado do banco.
+		const icon = () => {
+			const span = el('span', {'aria-hidden': 'true', class: 'quick-icon'});
+
+			span.innerHTML = '<svg width="16" height="16"><use href="#i-cart"/></svg>';
+
+			return span;
+		};
+		const label = (text) => [icon(), text];
+
+		if (!same) {
+			return el('a', {'aria-label': `Escolher a cópia de ${group.name}`, class: 'quick-add quick-choose', href: cardHref(group)}, 'Escolher');
+		}
+
+		const button = el('button', {class: 'quick-add', type: 'button'});
+
+		function draw() {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const free = group.copies.filter((row) => !inCart.has(row.id));
+			const there = group.copies.length - free.length;
+
+			button.disabled = !free.length;
+			button.classList.toggle('quick-in', there > 0);
+			button.setAttribute('aria-label', free.length ? `Adicionar ${group.name} ao carrinho` : `${group.name}: todas no carrinho`);
+			button.replaceChildren(...label(there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
+		}
+
+		button.addEventListener('click', () => {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const next = group.copies.find((row) => !inCart.has(row.id));
+
+			if (!next) {
+				return;
+			}
+
+			if (readCart().length >= MAX_ORDER) {
+				button.textContent = `Até ${MAX_ORDER} cartas`;
+
+				return;
+			}
+
+			writeCart([...readCart(), cartItem(next)]);
+			draw();
+		});
+		draw();
+
+		return button;
+	}
+
 	function tile(group) {
 		return el('article', {class: 'product card-item'},
 			shot(group),
@@ -302,7 +359,10 @@
 				el('h3', null, el('a', {href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
-				el('p', {class: 'card-count'}, available(group.copies.length))
+				el('div', {class: 'card-foot'},
+					el('p', {class: 'card-count'}, available(group.copies.length)),
+					quickAdd(group)
+				)
 			)
 		);
 	}
