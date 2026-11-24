@@ -181,10 +181,17 @@ CSS_V = hashlib.sha256((ROOT / "assets/style.css").read_bytes()).hexdigest()[:10
 # direto do Supabase; a versão no link segue a mesma ideia do CSS.
 JS_V = hashlib.sha256((ROOT / "assets/catalogo.js").read_bytes()).hexdigest()[:10]
 CATALOGO_JS = f'<script src="assets/catalogo.js?v={JS_V}" defer></script>'
+# O Pix e o QR Code, só na página do pedido, antes do catálogo (defer mantém
+# a ordem).
+PIX_V = hashlib.sha256((ROOT / "assets/pix.js").read_bytes()).hexdigest()[:10]
+PEDIDO_JS = (f'<script src="assets/pix.js?v={PIX_V}" defer></script>'
+             '<script src="assets/vendor/qrcode-generator-1.4.4.min.js" defer></script>')
 
 
 def page(name, title, body, active=None):
-    html = part("head").replace("{{TITLE}}", title) + part("sprite") + part("header") + body + part("footer")
+    # Toda página carrega o catálogo: o link Carrinho do cabeçalho conta as
+    # cartas do carrinho.
+    html = part("head").replace("{{TITLE}}", title) + part("sprite") + part("header") + body + CATALOGO_JS + part("footer")
     html = html.replace('href="assets/style.css"', f'href="assets/style.css?v={CSS_V}"', 1)
     if active:
         html = html.replace(f'<a href="{active}">', f'<a href="{active}" aria-current="page">', 1)
@@ -285,7 +292,7 @@ home = f'''
 
 '''
 
-page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home + CATALOGO_JS, "index.html")
+page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home, "index.html")
 print("index.html")
 
 
@@ -305,7 +312,6 @@ avulsas = f'''
 <section class="wrap cartas">
   <div data-catalog="all"><p class="card-note" role="status">Carregando as cartas…</p></div>
 </section>
-{CATALOGO_JS}
 '''
 
 page("avulsas", "Cartas avulsas — HOTARU", avulsas, "avulsas.html")
@@ -321,11 +327,46 @@ carta = f'''
 <section class="wrap cartas">
   <div data-catalog="card"><p class="card-note" role="status">Carregando a carta…</p></div>
 </section>
-{CATALOGO_JS}
 '''
 
 page("carta", "Carta — HOTARU", carta, "avulsas.html")
 print("carta.html")
+
+pedido = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; Carrinho</p>
+    <h1>Carrinho</h1>
+    <p>O carrinho não reserva as cartas: elas ficam com quem fechar o pedido primeiro. Fechado o pedido, você paga com Pix em até 48 horas.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="order"><p class="card-note" role="status">Carregando o carrinho…</p></div>
+</section>
+{PEDIDO_JS}
+'''
+
+page("pedido", "Carrinho — HOTARU", pedido)
+print("pedido.html")
+
+meus = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Meus pedidos</p>
+    <h1>Meus pedidos</h1>
+    <p>Os pedidos feitos neste navegador, ou abertos pelo link privado de um pedido.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="mine"><p class="card-note" role="status">Carregando os seus pedidos…</p></div>
+</section>
+{PEDIDO_JS}
+'''
+
+page("meus-pedidos", "Meus pedidos — HOTARU", meus)
+print("meus-pedidos.html")
 
 
 # --------------------------------------------------------------------------

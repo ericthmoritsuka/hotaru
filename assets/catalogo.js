@@ -4,15 +4,24 @@
 // etapa 3). Não há build: um preço salvo no tracker aparece aqui na próxima
 // visita.
 //
-// Três lugares usam o mesmo script, cada um marcado por data-catalog:
+// Quatro lugares usam o mesmo script, cada um marcado por data-catalog:
 //   home    na home, as cartas mais recentes, logo depois da hero; a seção
 //           inteira fica escondida quando não há nenhuma carta à venda
 //   all     avulsas.html, todas as cartas, com busca e filtros
-//   card    carta.html?c=<id da carta>&l=<idioma>, uma carta
+//   card    carta.html?c=<id da carta>&l=<idioma>, uma carta, com Adicionar
+//           ao carrinho
+//   order   pedido.html, o carrinho, o pedido e o Pix
+// Toda página carrega o script, para o link Carrinho do cabeçalho mostrar
+// quantas cartas há nele.
 //
-// Até o carrinho existir (etapa 5), comprar é mandar um e-mail: o botão abre
-// o e-mail da HOTARU com a carta no assunto. O site não fala em frete,
-// envio, parcelamento ou formas de pagamento enquanto nada disso existe.
+// Comprar (etapa 5, regras do Eric em 2026-11-24): o carrinho fica neste
+// navegador e não reserva nada; muitas pessoas podem ter a mesma carta no
+// carrinho. Quem fecha o pedido primeiro fica com ela (place_order no
+// Supabase), e ela some do catálogo. O carrinho aberto avisa quando uma
+// carta foi reservada por outra pessoa ou não está mais à venda. Fechado o
+// pedido, a página mostra o Pix copia e cola e o QR Code (assets/pix.js);
+// sem pagamento em 48 horas, o pedido é cancelado e as cartas voltam. O
+// site não fala em frete, envio ou parcelamento, que não existem.
 //
 // Todo texto vindo do banco entra na página como texto (textContent), nunca
 // como HTML.
@@ -34,6 +43,15 @@
 	// asiático (ja, ko, zh-tw...) é lido pelo próprio código.
 	const WESTERN = new Set(['de', 'en', 'es', 'fr', 'it', 'pt']);
 	const HOME_LIMIT = 8;
+	const CART_KEY = 'hotaru.cart';
+	const LAST_ORDER_KEY = 'hotaru.lastOrder';
+	// O carrinho aberto confere as cartas a cada minuto.
+	const RECHECK_MS = 60000;
+	const MAX_ORDER = 20;
+	// O comprovante: foto, captura ou PDF de até 5 MB, como o bucket
+	// store-receipts aceita.
+	const RECEIPT_TYPES = {'application/pdf': 'pdf', 'image/heic': 'heic', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'};
+	const RECEIPT_MAX = 5 * 1024 * 1024;
 
 	const LANGUAGES = {
 		de: 'Alemão',
@@ -134,21 +152,82 @@
 		return node;
 	}
 
-	async function readCatalog() {
-		const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/store_catalog`, {
-			body: '{}',
+	// Chama uma função pública do Supabase. Lança o erro do banco, com a
+	// mensagem dele, quando a resposta não é 2xx.
+	async function rpc(name, args = {}) {
+		const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
+			body: JSON.stringify(args),
 			headers: {apikey: SUPABASE_KEY, 'Content-Type': 'application/json'},
 			method: 'POST',
 		});
+		const body = await response.json().catch(() => null);
 
 		if (!response.ok) {
-			throw new Error(`store_catalog ${response.status}`);
+			throw Object.assign(new Error((body && body.message) || `${name} ${response.status}`), {code: body && body.code});
 		}
 
-		const rows = await response.json();
+		return body;
+	}
+
+	async function readCatalog() {
+		const rows = await rpc('store_catalog');
 
 		return Array.isArray(rows) ? rows : [];
 	}
+
+	// ------------------------------------------------------------ cart
+
+	// O carrinho: as cópias escolhidas, com o que a página precisa para
+	// mostrá-las sem ler o catálogo de novo.
+	function readCart() {
+		try {
+			const value = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
+
+			return Array.isArray(value) ? value.filter((item) => item && typeof item.id === 'string') : [];
+		}
+		catch {
+			return [];
+		}
+	}
+
+	function writeCart(items) {
+		try {
+			localStorage.setItem(CART_KEY, JSON.stringify(items));
+		}
+		catch {
+			// Sem armazenamento: o carrinho dura só esta página.
+		}
+
+		drawCartCount(items);
+	}
+
+	function drawCartCount(items = readCart()) {
+		for (const node of document.querySelectorAll('[data-cart-count]')) {
+			node.textContent = String(items.length);
+			node.hidden = !items.length;
+		}
+
+		for (const link of document.querySelectorAll('.orders-link')) {
+			link.hidden = !readOrders().length;
+		}
+
+		for (const link of document.querySelectorAll('.cart-link')) {
+			link.setAttribute('aria-label', items.length === 1 ? 'Carrinho, 1 carta' : `Carrinho, ${items.length} cartas`);
+		}
+	}
+
+	const cartItem = (row) => ({
+		cardId: row.card_id,
+		condition: row.condition || null,
+		finish: row.finish ? finishName(row.finish) : null,
+		id: row.id,
+		imagePath: row.image_path || null,
+		language: row.language || '',
+		name: row.name,
+		number: row.number || null,
+		price: Number(row.price_brl),
+		setName: row.set_name || null,
+	});
 
 	// Uma carta à venda por carta e idioma, com quantas cópias há, os
 	// estados e acabamentos delas e o menor preço.
@@ -215,6 +294,63 @@
 		return link ? el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner) : el('div', {class: 'shot card-shot'}, inner);
 	}
 
+	// O carrinho direto da grade (Eric, 2026-11-24): uma carta cujas cópias
+	// são todas iguais (estado, acabamento e preço) entra com um toque; uma
+	// com cópias diferentes leva à página da carta, para escolher qual.
+	const variantKey = (row) => [row.condition || '', row.finish || '', row.price_brl].join('|');
+
+	function quickAdd(group) {
+		const same = new Set(group.copies.map(variantKey)).size === 1;
+		// O ícone do sprite, o mesmo carrinho do cabeçalho; texto fixo, sem
+		// dado do banco.
+		const icon = () => {
+			const span = el('span', {'aria-hidden': 'true', class: 'quick-icon'});
+
+			span.innerHTML = '<svg width="16" height="16"><use href="#i-cart"/></svg>';
+
+			return span;
+		};
+		const label = (text) => [icon(), text];
+
+		if (!same) {
+			return el('a', {'aria-label': `Escolher a cópia de ${group.name}`, class: 'quick-add quick-choose', href: cardHref(group)}, 'Escolher');
+		}
+
+		const button = el('button', {class: 'quick-add', type: 'button'});
+
+		function draw() {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const free = group.copies.filter((row) => !inCart.has(row.id));
+			const there = group.copies.length - free.length;
+
+			button.disabled = !free.length;
+			button.classList.toggle('quick-in', there > 0);
+			button.setAttribute('aria-label', free.length ? `Adicionar ${group.name} ao carrinho` : `${group.name}: todas no carrinho`);
+			button.replaceChildren(...label(there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
+		}
+
+		button.addEventListener('click', () => {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const next = group.copies.find((row) => !inCart.has(row.id));
+
+			if (!next) {
+				return;
+			}
+
+			if (readCart().length >= MAX_ORDER) {
+				button.textContent = `Até ${MAX_ORDER} cartas`;
+
+				return;
+			}
+
+			writeCart([...readCart(), cartItem(next)]);
+			draw();
+		});
+		draw();
+
+		return button;
+	}
+
 	function tile(group) {
 		return el('article', {class: 'product card-item'},
 			shot(group),
@@ -223,7 +359,10 @@
 				el('h3', null, el('a', {href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
-				el('p', {class: 'card-count'}, available(group.copies.length))
+				el('div', {class: 'card-foot'},
+					el('p', {class: 'card-count'}, available(group.copies.length)),
+					quickAdd(group)
+				)
 			)
 		);
 	}
@@ -347,12 +486,76 @@
 				el('h1', null, group.name),
 				el('p', {class: 'card-price'}, brl(group.price)),
 				factList,
-				el('a', {class: 'btn btn-gold', href: mailto(group)}, 'Quero esta carta'),
-				el('p', {class: 'card-how'}, `Para comprar, mande um e-mail para ${EMAIL} (o botão já abre com a carta escrita). A entrega é combinada com você.`),
+				buyBox(group),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: ela fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('p', {class: 'card-how'}, 'Dúvidas? ', el('a', {href: mailto(group)}, `Escreva para ${EMAIL}`), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
 		));
 		addArtist(group, factList);
+	}
+
+	// Adicionar ao carrinho: uma linha por estado, acabamento e preço, com
+	// quantas cópias ainda não estão no carrinho.
+	function buyBox(group) {
+		const box = el('div', {class: 'buy-box'});
+
+		function draw() {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const variants = new Map();
+
+			for (const row of group.copies) {
+				const key = [row.condition || '', row.finish || '', row.price_brl].join('|');
+
+				if (!variants.has(key)) {
+					variants.set(key, {free: [], row, total: 0});
+				}
+
+				const variant = variants.get(key);
+
+				variant.total++;
+
+				if (!inCart.has(row.id)) {
+					variant.free.push(row);
+				}
+			}
+
+			const lines = [...variants.values()].map(({free, row, total}) => {
+				const label = [row.condition, row.finish ? finishName(row.finish) : null].filter(Boolean).join(' · ') || 'Cópia';
+				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
+					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
+				const button = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+					const n = Number(qty.value) || 1;
+					const cart = readCart();
+
+					if (cart.length + n > MAX_ORDER) {
+						status.textContent = `Um pedido leva até ${MAX_ORDER} cartas.`;
+
+						return;
+					}
+
+					writeCart([...cart, ...free.slice(0, n).map(cartItem)]);
+					draw();
+					status.replaceChildren(n === 1 ? 'Adicionada ao carrinho. ' : `${n} adicionadas ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+				}, type: 'button'}, 'Adicionar ao carrinho');
+				const inside = total - free.length;
+
+				return el('div', {class: 'buy-line'},
+					el('p', {class: 'buy-label'}, el('strong', null, label), ` · ${brl(row.price_brl)} · ${available(total)}`),
+					free.length
+						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
+						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
+					inside && free.length ? el('p', {class: 'buy-in'}, inside === 1 ? '1 já está no seu carrinho.' : `${inside} já estão no seu carrinho.`) : null
+				);
+			});
+			const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
+
+			box.replaceChildren(...lines, status);
+		}
+
+		draw();
+
+		return box;
 	}
 
 	// O artista da carta, do TCGdex: no idioma da cópia, depois em inglês.
@@ -405,10 +608,564 @@
 
 	// ----------------------------------------------------------- start
 
+	// ----------------------------------------------------------- order
+
+	const when = (iso) => new Date(iso).toLocaleString('pt-BR', {day: '2-digit', hour: '2-digit', minute: '2-digit', month: '2-digit', timeZone: 'America/Recife'});
+
+	const NOTICES = {
+		gone: ['Não está mais disponível.', 'Esta carta foi vendida ou saiu do catálogo.'],
+		reserved: ['Temporariamente indisponível.', 'Outra pessoa fechou um pedido com esta carta. Se a compra não for concluída, ela volta ao catálogo.'],
+	};
+
+	// Meus pedidos: os pedidos feitos neste navegador, mais novos primeiro,
+	// cada um pelo seu código secreto.
+	const ORDERS_KEY = 'hotaru.orders';
+
+	function readOrders() {
+		try {
+			const value = JSON.parse(localStorage.getItem(ORDERS_KEY) || '[]');
+
+			return Array.isArray(value) ? value.filter((one) => one && typeof one.token === 'string') : [];
+		}
+		catch {
+			return [];
+		}
+	}
+
+	function rememberOrder(token) {
+		if (!/^[0-9a-f-]{36}$/i.test(String(token || ''))) {
+			return;
+		}
+
+		try {
+			const kept = readOrders().filter((one) => one.token !== token);
+
+			localStorage.setItem(ORDERS_KEY, JSON.stringify([{at: new Date().toISOString(), token}, ...kept].slice(0, 50)));
+		}
+		catch {
+			// Sem armazenamento: o link privado ainda abre o pedido.
+		}
+
+		drawCartCount();
+	}
+
+	function readLastOrder() {
+		try {
+			const value = JSON.parse(localStorage.getItem(LAST_ORDER_KEY) || 'null');
+
+			return value && value.code ? value : null;
+		}
+		catch {
+			return null;
+		}
+	}
+
+	function keepLastOrder(order) {
+		try {
+			localStorage.setItem(LAST_ORDER_KEY, JSON.stringify(order));
+		}
+		catch {
+			// Sem armazenamento: o Pix fica só nesta página.
+		}
+	}
+
+	// Envia o comprovante para o bucket privado, sob o código secreto do
+	// pedido, e o registra no pedido. Lança um erro com a mensagem a mostrar.
+	async function sendReceipt(order, file) {
+		const ext = RECEIPT_TYPES[file.type];
+
+		if (!ext) {
+			throw new Error('Envie uma foto (JPG, PNG, WEBP ou HEIC) ou um PDF.');
+		}
+
+		if (file.size > RECEIPT_MAX) {
+			throw new Error('O arquivo passa de 5 MB. Envie uma captura de tela do comprovante.');
+		}
+
+		const random = Array.from(crypto.getRandomValues(new Uint8Array(8)), (n) => n.toString(16).padStart(2, '0')).join('');
+		const path = `${order.receiptToken}/${random}.${ext}`;
+		const upload = await fetch(`${SUPABASE_URL}/storage/v1/object/store-receipts/${path}`, {
+			body: file,
+			headers: {apikey: SUPABASE_KEY, 'Content-Type': file.type, 'x-upsert': 'false'},
+			method: 'POST',
+		}).catch(() => null);
+
+		if (!upload || !upload.ok) {
+			throw new Error('O comprovante não foi enviado. Confira a conexão e tente de novo, ou mande para ' + EMAIL + '.');
+		}
+
+		await rpc('attach_receipt', {path, token: order.receiptToken});
+	}
+
+	// Já pagou? Envie o comprovante: só enquanto o pedido espera pagamento.
+	function receiptBox(order) {
+		const status = el('p', {'aria-live': 'polite', class: 'receipt-status'});
+
+		if (order.receiptSent) {
+			return el('div', {class: 'receipt'}, el('p', {class: 'receipt-done'}, 'Comprovante enviado. O Eric confere o pagamento e fala com você.'));
+		}
+
+		if (!order.receiptToken) {
+			return null;
+		}
+
+		const input = el('input', {accept: 'image/jpeg,image/png,image/webp,image/heic,application/pdf', class: 'receipt-file', id: 'receipt-file', type: 'file'});
+		const button = el('button', {class: 'btn btn-navy', type: 'button'}, 'Enviar comprovante');
+		const box = el('div', {class: 'receipt'},
+			el('h3', null, 'Já pagou? Envie o comprovante'),
+			el('p', null, 'Uma foto ou captura de tela do comprovante do Pix ajuda o Eric a conferir o pagamento. Só o Eric vê.'),
+			el('label', {class: 'receipt-label', for: 'receipt-file'}, 'Comprovante'),
+			input,
+			button,
+			status
+		);
+
+		button.addEventListener('click', async () => {
+			const file = input.files && input.files[0];
+
+			if (!file) {
+				status.textContent = 'Escolha o arquivo do comprovante.';
+				input.focus();
+
+				return;
+			}
+
+			button.disabled = true;
+			status.textContent = 'Enviando…';
+
+			try {
+				await sendReceipt(order, file);
+
+				const kept = readLastOrder();
+
+				if (kept && kept.code === order.code) {
+					keepLastOrder({...kept, receiptSent: true});
+				}
+
+				box.replaceWith(receiptBox({...order, receiptSent: true}));
+			}
+			catch (err) {
+				button.disabled = false;
+				status.textContent = err.message || 'O comprovante não foi enviado. Tente de novo.';
+			}
+		});
+
+		return box;
+	}
+
+	// O Pix de um pedido aberto: o QR Code, o copia e cola e o botão de
+	// copiar. Os IDs levam o código do pedido, porque Meus pedidos pode
+	// mostrar mais de um.
+	function pixBlock(order) {
+		const Pix = window.HotaruPix;
+		const code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+
+		if (!code) {
+			return message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.');
+		}
+
+		const id = `pix-code-${order.code}`;
+		const copyStatus = el('span', {'aria-live': 'polite', class: 'pix-copied'});
+		const qr = el('div', {'aria-label': `QR Code do Pix de ${brl(order.total)}`, class: 'pix-qr', role: 'img'});
+		const text = el('textarea', {class: 'pix-code', id, readonly: true, rows: 3}, code);
+
+		if (window.qrcode) {
+			const made = window.qrcode(0, 'M');
+
+			made.addData(code);
+			made.make();
+			// Um SVG feito pela biblioteca a partir do código acima, que só
+			// tem caracteres que este script mesmo escreveu.
+			qr.innerHTML = made.createSvgTag({margin: 2, scalable: true});
+		}
+
+		return el('div', {class: 'pix'},
+			qr,
+			el('label', {class: 'pix-label', for: id}, 'Pix copia e cola'),
+			text,
+			el('div', {class: 'pix-actions'},
+				el('button', {class: 'btn btn-gold', onclick: () => copy(code, text, copyStatus), type: 'button'}, 'Copiar código Pix'),
+				copyStatus
+			),
+			el('p', {class: 'pix-who'}, `Quem recebe: ${Pix.RECEIVER.name}. No app do banco aparece o nome completo do Eric.`)
+		);
+	}
+
+	async function copy(value, field, status) {
+		try {
+			await navigator.clipboard.writeText(value);
+			status.textContent = 'Copiado!';
+		}
+		catch {
+			field.select();
+			status.textContent = 'Selecionado: copie com o menu do celular.';
+		}
+	}
+
+	// O link privado de um pedido: abre o pedido em qualquer aparelho.
+	const orderLink = (token) => new URL(`meus-pedidos.html?p=${encodeURIComponent(token)}`, window.location.href).href;
+
+	function linkBlock(order) {
+		if (!order.receiptToken) {
+			return null;
+		}
+
+		const link = orderLink(order.receiptToken);
+		const id = `order-link-${order.code}`;
+		const status = el('span', {'aria-live': 'polite', class: 'pix-copied'});
+		const field = el('input', {class: 'order-link-field', id, readonly: true, type: 'text', value: link});
+
+		return el('div', {class: 'order-link'},
+			el('label', {for: id}, 'Link privado deste pedido'),
+			el('p', null, 'Guarde o link (ou mande para você mesmo) para ver o pedido em outro aparelho. Quem tem o link vê o pedido.'),
+			field,
+			el('div', {class: 'pix-actions'},
+				el('button', {class: 'btn btn-navy', onclick: () => copy(link, field, status), type: 'button'}, 'Copiar link'),
+				status
+			)
+		);
+	}
+
+	const itemText = (item) => `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`;
+
+	// O pedido fechado: o código, o total, o prazo e o Pix.
+	function confirmation(order) {
+		return el('div', {class: 'order-done'},
+			el('p', {class: 'eyebrow'}, 'Pedido recebido'),
+			el('h2', null, `Pedido ${order.code}`),
+			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
+			el('p', null, `Pague com Pix até ${when(order.reservedUntil)}. Até lá, as cartas ficam reservadas para você.`),
+			pixBlock(order),
+			receiptBox(order),
+			el('p', null, 'Depois de pagar, é só aguardar: o Eric confere o pagamento e combina a entrega com você pelo telefone que você deixou. Sem pagamento até o prazo, o pedido é cancelado e as cartas voltam para o catálogo.'),
+			el('ul', {class: 'order-items'}, (order.items || []).map((item) => el('li', null, itemText(item)))),
+			linkBlock(order),
+			el('div', {class: 'order-next'},
+				el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Continuar vendo as cartas'),
+				el('a', {class: 'order-mine', href: 'meus-pedidos.html'}, 'Meus pedidos')
+			)
+		);
+	}
+
+	function order(root) {
+		let statuses = {};
+		let busy = false;
+		let notice = '';
+		let timer = null;
+
+		const form = el('form', {class: 'order-form', novalidate: true});
+		const nameInput = el('input', {autocomplete: 'name', id: 'order-name', maxlength: 80, required: true, type: 'text'});
+		const phoneInput = el('input', {autocomplete: 'tel', id: 'order-phone', inputmode: 'tel', maxlength: 40, required: true, type: 'text'});
+		const noteInput = el('textarea', {id: 'order-note', maxlength: 500, rows: 2});
+		const formError = el('p', {class: 'order-error', role: 'alert'});
+		const submit = el('button', {class: 'btn btn-gold', id: 'order-submit', type: 'submit'}, 'Fechar pedido');
+		const list = el('ul', {class: 'cart-list'});
+		const totalLine = el('p', {class: 'cart-total'});
+		const noticeLine = el('p', {'aria-live': 'polite', class: 'cart-notice'});
+
+		form.append(
+			el('label', {for: 'order-name'}, 'Seu nome'), nameInput,
+			el('label', {for: 'order-phone'}, 'Telefone ou ramal'), phoneInput,
+			el('label', {for: 'order-note'}, 'Observação (opcional)'), noteInput,
+			el('p', {class: 'order-privacy'}, 'Seu nome e telefone só servem para o Eric combinar a entrega com você.'),
+			formError,
+			submit
+		);
+		form.addEventListener('submit', (event) => {
+			event.preventDefault();
+			close();
+		});
+
+		const OFFLINE = 'Não foi possível conferir as cartas agora. Tente de novo em instantes.';
+		const freeItems = () => readCart().filter((item) => statuses[item.id] === 'available');
+
+		function remove(id) {
+			writeCart(readCart().filter((item) => item.id !== id));
+			draw();
+		}
+
+		// O último pedido, enquanto o prazo para pagar não acabou.
+		function openOrder() {
+			const last = readLastOrder();
+
+			return last && Date.parse(last.reservedUntil) > Date.now() ? last : null;
+		}
+
+		function draw() {
+			const cart = readCart();
+
+			if (!cart.length) {
+				stopTimer();
+
+				const last = openOrder();
+				const open = Boolean(last);
+
+				root.replaceChildren(...(open ? [confirmation(last)] : [message('Seu carrinho está vazio.'), el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Ver as cartas à venda')]));
+
+				return;
+			}
+
+			list.replaceChildren(...cart.map((item) => {
+				const status = statuses[item.id];
+				const off = status === 'reserved' || status === 'gone';
+
+				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
+					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
+					el('div', {class: 'cart-body'},
+						el('p', {class: 'cart-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}`}, item.name)),
+						el('p', {class: 'cart-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
+						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, NOTICES[status][0]), ` ${NOTICES[status][1]}`) : null,
+						el('p', {class: 'cart-price'}, brl(item.price))
+					),
+					el('button', {'aria-label': `Remover ${item.name}`, class: 'cart-remove', onclick: () => remove(item.id), type: 'button'}, 'Remover')
+				);
+			}));
+
+			const free = freeItems();
+			const total = free.reduce((sum, item) => sum + item.price, 0);
+			const checked = cart.every((item) => statuses[item.id]);
+
+			totalLine.textContent = free.length ? `Total: ${brl(total)} (${free.length === 1 ? '1 carta' : `${free.length} cartas`})` : '';
+			noticeLine.textContent = notice;
+			submit.textContent = free.length ? `Fechar pedido com ${free.length === 1 ? '1 carta' : `${free.length} cartas`}` : 'Fechar pedido';
+			submit.disabled = busy || !checked || !free.length;
+
+			if (!root.contains(form)) {
+				// Um pedido esperando pagamento fica à mão acima do carrinho, para
+				// o Pix não se perder quando sobram cartas nele.
+				const last = openOrder();
+
+				root.replaceChildren(
+					last ? el('details', {class: 'order-open'},
+						el('summary', null, `Pedido ${last.code} aguardando pagamento: ver o Pix`),
+						confirmation(last)
+					) : '',
+					el('h2', {class: 'cart-head'}, 'Seu carrinho'),
+					noticeLine,
+					list,
+					totalLine,
+					el('h3', {class: 'order-head'}, 'Fechar o pedido'),
+					form
+				);
+			}
+		}
+
+		// Confere no Supabase quais cartas do carrinho ainda estão à venda.
+		async function check() {
+			const cart = readCart();
+
+			if (!cart.length) {
+				draw();
+
+				return true;
+			}
+
+			try {
+				statuses = await rpc('listing_status', {ids: cart.map((item) => item.id)}) || {};
+
+				if (notice === OFFLINE) {
+					notice = '';
+				}
+
+				return true;
+			}
+			catch {
+				notice = OFFLINE;
+
+				return false;
+			}
+			finally {
+				draw();
+			}
+		}
+
+		function stopTimer() {
+			if (timer) {
+				clearInterval(timer);
+				timer = null;
+			}
+		}
+
+		async function close() {
+			formError.textContent = '';
+			notice = '';
+
+			const name = nameInput.value.trim();
+			const phone = phoneInput.value.trim();
+
+			if (!name || !phone) {
+				formError.textContent = !name ? 'Escreva o seu nome.' : 'Escreva um telefone ou ramal para o Eric falar com você.';
+				(!name ? nameInput : phoneInput).focus();
+
+				return;
+			}
+
+			busy = true;
+			draw();
+
+			const fresh = await check();
+			const items = freeItems();
+
+			if (!fresh || !items.length) {
+				busy = false;
+				draw();
+
+				return;
+			}
+
+			let result;
+
+			try {
+				result = await rpc('place_order', {buyer_name: name, buyer_note: noteInput.value.trim() || null, buyer_phone: phone, items: items.map((item) => item.id)});
+			}
+			catch (err) {
+				busy = false;
+				formError.textContent = `O pedido não foi fechado. ${err.message || 'Tente de novo em instantes.'}`;
+				draw();
+
+				return;
+			}
+
+			if (result && Array.isArray(result.unavailable)) {
+				busy = false;
+				notice = 'Alguém fechou um pedido com uma das suas cartas antes de você. Confira o carrinho e feche de novo com as que sobraram.';
+				await check();
+
+				return;
+			}
+
+			const ordered = new Set(items.map((item) => item.id));
+			const done = {code: result.code, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
+
+			keepLastOrder(done);
+			rememberOrder(done.receiptToken);
+			writeCart(readCart().filter((item) => !ordered.has(item.id)));
+			busy = false;
+			stopTimer();
+			root.replaceChildren(confirmation(done));
+			window.scrollTo(0, 0);
+		}
+
+		draw();
+		check();
+		timer = setInterval(check, RECHECK_MS);
+		document.addEventListener('visibilitychange', () => {
+			if (document.visibilityState === 'visible' && readCart().length && root.contains(form)) {
+				check();
+			}
+		});
+	}
+
+	// ------------------------------------------------------- my orders
+
+	const STATUS_TEXT = {
+		cancelled: 'Cancelado: as cartas voltaram para o catálogo.',
+		delivered: 'Entregue. Obrigado pela compra!',
+		expired: 'Vencido: o pagamento não chegou em 48 horas, e as cartas voltaram para o catálogo.',
+		paid: 'Pagamento confirmado. O Eric vai combinar a entrega com você.',
+	};
+
+	function leftText(iso) {
+		const minutes = Math.ceil((Date.parse(iso) - Date.now()) / 60000);
+
+		return minutes >= 60 ? `faltam ${Math.floor(minutes / 60)} h` : `faltam ${Math.max(minutes, 1)} min`;
+	}
+
+	// Um pedido como o Supabase o devolve (order_status), na forma que as
+	// peças do pedido usam.
+	const fromServer = (row) => ({
+		code: row.code,
+		createdAt: row.created_at,
+		items: (row.items || []).map((item) => ({imagePath: item.image_path, language: item.language, name: item.name, number: item.number, price: Number(item.price_brl), setName: item.set_name})),
+		receiptSent: Boolean(row.receipt_at),
+		receiptToken: row.token,
+		reservedUntil: row.reserved_until,
+		status: row.status === 'paid' && row.delivered_at ? 'delivered' : row.status,
+		total: Number(row.total),
+	});
+
+	function mineCard(order) {
+		const open = order.status === 'pending' && Date.parse(order.reservedUntil) > Date.now();
+		const state = open ? `Aguardando pagamento · ${leftText(order.reservedUntil)}` : STATUS_TEXT[order.status] || STATUS_TEXT.expired;
+
+		return el('article', {class: `mine-order mine-${open ? 'pending' : order.status}`, id: `mine-${order.code}`},
+			el('div', {class: 'mine-head'},
+				el('h2', null, `Pedido ${order.code}`),
+				el('p', {class: 'mine-date'}, `Feito em ${when(order.createdAt)}`)
+			),
+			el('p', {class: 'mine-state'}, state),
+			el('ul', {class: 'order-items'}, order.items.map((item) => el('li', null, itemText(item)))),
+			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
+			open ? el('p', null, `Pague com Pix até ${when(order.reservedUntil)}.`) : null,
+			open ? pixBlock(order) : null,
+			open ? receiptBox(order) : null,
+			linkBlock(order)
+		);
+	}
+
+	async function mine(root) {
+		const params = new URLSearchParams(window.location.search);
+		const shared = params.get('p');
+
+		if (shared) {
+			rememberOrder(shared);
+		}
+
+		const tokens = readOrders().map((one) => one.token);
+
+		if (!tokens.length) {
+			root.replaceChildren(
+				message('Nenhum pedido feito neste navegador ainda. Se você tem o link privado de um pedido, abra-o aqui.'),
+				el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Ver as cartas à venda')
+			);
+
+			return;
+		}
+
+		let rows;
+
+		try {
+			rows = await rpc('order_status', {tokens});
+		}
+		catch {
+			root.replaceChildren(message('Não foi possível ler os seus pedidos agora. Tente de novo em instantes.'));
+
+			return;
+		}
+
+		const orders = (Array.isArray(rows) ? rows : []).map(fromServer);
+		const first = shared ? orders.find((one) => one.receiptToken === shared) : null;
+
+		if (!orders.length) {
+			root.replaceChildren(message('Não encontramos esses pedidos. Se você tem o link privado de um pedido, confira se ele está completo.'));
+
+			return;
+		}
+
+		// O pedido do link aberto vem primeiro.
+		const shown = first ? [first, ...orders.filter((one) => one !== first)] : orders;
+
+		root.replaceChildren(...shown.map(mineCard));
+	}
+
 	const VIEWS = {all, card: one, home};
 
 	async function start() {
-		const roots = [...document.querySelectorAll('[data-catalog]')];
+		drawCartCount();
+
+		const mineRoot = document.querySelector('[data-catalog="mine"]');
+
+		if (mineRoot) {
+			mine(mineRoot);
+		}
+
+		const orderRoot = document.querySelector('[data-catalog="order"]');
+
+		if (orderRoot) {
+			order(orderRoot);
+		}
+
+		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot);
 
 		if (!roots.length) {
 			return;
