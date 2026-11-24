@@ -1139,7 +1139,12 @@ section { padding: 76px 0; }
 .sealed-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
 .sealed-thumb { padding: 0; border: 1px solid rgba(14, 31, 71, 0.18); border-radius: 8px; background: #fff; cursor: pointer; width: 64px; height: 64px; overflow: hidden; }
 .sealed-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.sealed-description { white-space: pre-line; color: var(--ink-soft); font-size: 0.92rem; margin: 0 0 20px; }
+.sealed-description { color: var(--ink-soft); font-size: 0.92rem; margin: 0 0 20px; overflow-wrap: anywhere; }
+.sealed-description p, .sealed-description ul { margin: 0 0 12px; }
+.sealed-description > :last-child { margin-bottom: 0; }
+.sealed-description ul { padding-left: 1.25em; }
+.sealed-description li + li { margin-top: 2px; }
+.sealed-description strong { color: var(--ink); }
 
 /* Administração (admin.html, assets/admin.js). */
 .admin-note { color: var(--ink-soft); }

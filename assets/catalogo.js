@@ -158,6 +158,77 @@
 		return node;
 	}
 
+	// A descrição de um selado aceita um Markdown mínimo, que vira nós da
+	// página (nunca HTML): uma linha em branco separa parágrafos, linhas que
+	// começam com "- " (ou "* " e "• ") viram lista, **texto** vira negrito e
+	// *texto* vira itálico. Qualquer outra coisa aparece como foi escrita.
+	const LIST_ITEM = /^[-*•]\s+/;
+	const EMPHASIS = /\*\*(.+?)\*\*|\*([^\s*](?:[^*]*[^\s*])?)\*/g;
+
+	function inlineText(text) {
+		const parts = [];
+		let last = 0;
+
+		for (const match of text.matchAll(EMPHASIS)) {
+			parts.push(text.slice(last, match.index));
+			parts.push(match[1] === undefined ? el('em', null, match[2]) : el('strong', null, inlineText(match[1])));
+			last = match.index + match[0].length;
+		}
+
+		parts.push(text.slice(last));
+
+		return parts.filter((part) => part !== '');
+	}
+
+	function richText(text) {
+		const blocks = [];
+
+		for (const chunk of String(text || '').replace(/\r\n?/g, '\n').split(/\n[ \t]*\n/)) {
+			let lines = [];
+			let items = [];
+
+			const flush = () => {
+				if (lines.length) {
+					blocks.push(el('p', null, lines.map((line, i) => [i ? el('br') : null, inlineText(line)])));
+				}
+
+				if (items.length) {
+					blocks.push(el('ul', null, items.map((item) => el('li', null, inlineText(item)))));
+				}
+
+				lines = [];
+				items = [];
+			};
+
+			for (const raw of chunk.split('\n')) {
+				const line = raw.trim();
+
+				if (!line) {
+					continue;
+				}
+
+				if (LIST_ITEM.test(line)) {
+					if (lines.length) {
+						flush();
+					}
+
+					items.push(line.replace(LIST_ITEM, ''));
+				}
+				else {
+					if (items.length) {
+						flush();
+					}
+
+					lines.push(line);
+				}
+			}
+
+			flush();
+		}
+
+		return blocks;
+	}
+
 	// Chama uma função pública do Supabase. Lança o erro do banco, com a
 	// mensagem dele, quando a resposta não é 2xx.
 	async function rpc(name, args = {}) {
@@ -1414,7 +1485,7 @@
 				el('h1', null, product.name),
 				el('p', {class: 'card-price'}, brl(product.price)),
 				el('dl', {class: 'card-facts'}, facts.map(([label, value]) => [el('dt', null, label), el('dd', null, value)])),
-				product.description ? el('p', {class: 'sealed-description'}, product.description) : null,
+				product.description ? el('div', {class: 'sealed-description'}, richText(product.description)) : null,
 				box,
 				el('p', {class: 'card-how'}, 'O carrinho não reserva o produto: ele fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
 				el('a', {class: 'card-back', href: 'selados.html'}, '← Todos os selados')
