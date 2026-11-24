@@ -185,6 +185,17 @@ def page(name, title, body, active=None):
 # Home
 # --------------------------------------------------------------------------
 
+YT = "https://www.youtube.com/@Ericthm_"
+
+CANAL = f'''<a class="ytbox" href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">
+      <span class="play"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="#i-yt"/></svg></span>
+      <span class="plate">
+        <b>Canal no YouTube</b>
+        @Ericthm_ · colecionismo de cartas
+        <em>Assistir no YouTube &rarr;</em>
+      </span>
+    </a>'''
+
 cats_html = "\n".join(
     f'''<a class="cat" href="loja.html#{slug}">
   <span class="count">{n}</span>
@@ -197,51 +208,27 @@ home = f'''
 <section class="hero">
   <div class="wrap">
     <div>
-      <p class="eyebrow">Recife · Pernambuco</p>
+      <p class="eyebrow">Loja virtual · Recife/PE</p>
       <h1>A carta que faltava<br>na sua <em>coleção</em>.</h1>
       <p class="lede">
-        Selados lacrados de fábrica, singles conferidos carta a carta e os acessórios
-        que mantêm tudo isso intacto. Somos uma loja de bairro em Boa Viagem que
-        despacha para o Brasil inteiro.
+        Cartas avulsas conferidas uma a uma e alguns selados lacrados de fábrica,
+        enviados protegidos em sleeve, toploader e caixa. Somos uma loja virtual que
+        nasceu da paixão por colecionar cartas e despacha para o Brasil inteiro.
       </p>
       <div class="actions">
-        <a class="btn btn-gold" href="loja.html">Ver a loja</a>
-        <a class="btn btn-ghost" href="#destaques">Destaques da semana</a>
+        <a class="btn btn-gold" href="#avisos">Quero ser avisado</a>
+        <a class="btn btn-ghost" href="#conferencia">Como conferimos</a>
       </div>
     </div>
     <div class="hero-cards">
       {tcard("m-booster", "Selados")}
       {tcard("m-card", "Singles")}
-      {tcard("m-photocard", "K-Pop")}
+      {tcard("m-sleeve", "Protegida")}
     </div>
   </div>
 </section>
 
-<section class="wrap">
-  <div class="section-head">
-    <div>
-      <p class="eyebrow">Categorias</p>
-      <h2>Por onde você quer começar</h2>
-      <p>Quatro corredores, do lacre de fábrica ao porta-carta que protege o achado.</p>
-    </div>
-    <a class="more" href="loja.html">Ver tudo</a>
-  </div>
-  <div class="cats">{cats_html}</div>
-</section>
-
-<section class="wrap" id="destaques">
-  <div class="section-head">
-    <div>
-      <p class="eyebrow">Destaques</p>
-      <h2>Chegou essa semana</h2>
-      <p>O que saiu da caixa nos últimos dias, com estoque conferido na loja.</p>
-    </div>
-    <a class="more" href="loja.html">Catálogo completo</a>
-  </div>
-  {grid(P[:8])}
-</section>
-
-<section class="wrap">
+<section class="wrap" id="conferencia">
   <div class="split">
     <div class="side">
       <p class="eyebrow">Singles</p>
@@ -251,12 +238,12 @@ home = f'''
         anunciar, e fotografamos a carta exata que vai para o envelope. O que está no
         anúncio é o que chega — sem "foto ilustrativa".
       </p>
-      <a class="btn btn-gold" href="loja.html#singles">Procurar um single</a>
+      <a class="btn btn-gold" href="#avisos">Quero ser avisado</a>
     </div>
     <div class="art">
       <div class="fan">
         {tcard("m-card", "NM")}
-        {tcard("m-photocard", "PSA 10")}
+        {tcard("m-card", "PSA 10")}
         {tcard("m-sleeve", "Protegido")}
       </div>
     </div>
@@ -266,28 +253,21 @@ home = f'''
 <section class="store" id="sobre">
   <div class="wrap">
     <div>
-      <p class="eyebrow">Loja física</p>
-      <h2>Passe na loja, abra o pacote com a gente</h2>
+      <p class="eyebrow">Nossa história</p>
+      <h2>Tudo começou com a paixão por colecionar cartas</h2>
       <p>
-        Ficamos em Boa Viagem, a duas quadras da praia. Tem mesa para jogar, avaliação
-        de coleção na hora e retirada sem frete para quem é do Recife e região.
+        Antes de ser loja, a HOTARU era coleção: um binder que não parava de crescer,
+        edições comparadas lado a lado e cada carta conferida borda por borda antes
+        de ganhar lugar na página.
       </p>
-      <ul class="hours">
-        <li><span>Segunda a sexta</span><span>10h às 19h</span></li>
-        <li><span>Sábado</span><span>10h às 17h</span></li>
-        <li><span>Domingo</span><span>Fechado</span></li>
-        <li><span>Torneio semanal</span><span>Quinta, 19h</span></li>
-      </ul>
-      <a class="btn btn-navy" href="#contato">Como chegar</a>
+      <p>
+        Hoje somos uma loja 100% virtual, sem balcão e sem endereço para visitar. Cada
+        pedido é separado com o cuidado de quem coleciona e enviado para todo o Brasil.
+        E no nosso canal do YouTube a gente ensina mais sobre colecionismo de cartas.
+      </p>
+      <a class="btn btn-navy" href="sobre.html">Conheça a HOTARU</a>
     </div>
-    <div class="mapbox">
-      <div class="river"></div><div class="road a"></div><div class="road b"></div>
-      <svg class="pin" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pin"/></svg>
-      <div class="plate">
-        <b>HOTARU Colecionáveis</b>
-        Av. Conselheiro Aguiar, 2040 — Boa Viagem, Recife/PE
-      </div>
-    </div>
+    {CANAL}
   </div>
 </section>
 
@@ -298,11 +278,11 @@ home = f'''
   </div>
 </section>
 
-<section class="news">
+<section class="news" id="avisos">
   <div class="wrap">
-    <p class="eyebrow">Lista de avisos</p>
-    <h2>Pré-venda abre <em>primeiro</em> para a lista</h2>
-    <p>Booster box some rápido. Quem está na lista recebe o link algumas horas antes de o estoque ir para o site.</p>
+    <p class="eyebrow">Em breve</p>
+    <h2>As cartas disponíveis <em>chegam aqui</em></h2>
+    <p>O catálogo de cartas está quase pronto. Deixe seu e-mail e a gente avisa quando as primeiras cartas e os selados entrarem no site.</p>
     <form class="field" onsubmit="return false">
       <input type="email" placeholder="seu@email.com.br" aria-label="Seu e-mail">
       <button class="btn btn-gold" type="submit">Avisar</button>
@@ -311,7 +291,7 @@ home = f'''
 </section>
 '''
 
-page("index", "HOTARU — Colecionáveis, selados e K-Pop | Recife/PE", home, "index.html")
+page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home, "index.html")
 print("index.html")
 
 
@@ -335,8 +315,7 @@ filtros = "".join([
                         ("Graded (PSA/CGC)", 88, False), ("Played", 240, False)]),
     checks("Preço", [("Até R$ 50", 640, False), ("R$ 50 a R$ 200", 810, False),
                      ("R$ 200 a R$ 800", 390, False), ("Acima de R$ 800", 112, False)]),
-    checks("Disponibilidade", [("Em estoque", 2410, True), ("Pré-venda", 36, False),
-                               ("Retirada na loja", 1180, False)]),
+    checks("Disponibilidade", [("Em estoque", 2410, True), ("Pré-venda", 36, False)]),
 ])
 
 loja = f'''
@@ -450,7 +429,6 @@ def pdp(p):
 
       <ul class="perks">
         <li><svg><use href="#i-truck"/></svg> Frete grátis acima de R$ 249 para todo o Brasil. Recife e região em até 2 dias úteis.</li>
-        <li><svg><use href="#i-store"/></svg> Retirada sem frete em Boa Viagem, normalmente no mesmo dia.</li>
         <li><svg><use href="#i-shield"/></svg> Embalagem rígida com sleeve e toploader, sem exceção.</li>
         <li><svg><use href="#i-star"/></svg> Sete dias para troca ou devolução, do jeito que chegou.</li>
       </ul>
@@ -542,7 +520,6 @@ carrinho = f'''
 
       <ul class="perks" style="margin-top:22px">
         <li><svg><use href="#i-shield"/></svg> Pagamento processado em ambiente seguro.</li>
-        <li><svg><use href="#i-store"/></svg> Retirada em Boa Viagem sem custo de frete.</li>
       </ul>
     </aside>
   </div>
@@ -560,17 +537,17 @@ sobre = f'''
 <div class="pagehead">
   <div class="wrap">
     <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Sobre nós</p>
-    <h1>Uma loja de bairro<br>que virou catálogo</h1>
-    <p>Brilhe em novos universos — é o que a gente escreveu na parede antes de ter prateleira.</p>
+    <h1>Uma paixão por cartas<br>que virou loja</h1>
+    <p>Brilhe em novos universos — o lema veio antes da loja, junto com o primeiro binder.</p>
   </div>
 </div>
 
 <section class="wrap">
   <div class="story">
     <p class="first">
-      A HOTARU começou numa mesa de quinta-feira. Um grupo que se juntava para jogar em Boa Viagem
-      passou a trocar carta antes da partida, depois durante, depois em vez da partida. Quando a
-      caixa de sapato virou três binders, ficou claro que dava para abrir a loja.
+      A HOTARU começou com a paixão por colecionar cartas. Primeiro foi um binder, depois outro,
+      depois a mania de conferir cada borda, cada edição e cada idioma antes de guardar uma carta.
+      Quando a coleção começou a sobrar, ficou claro que dava para abrir uma loja.
     </p>
     <p>
       O nome é a palavra japonesa para vaga-lume. A gente gosta da ideia porque uma carta boa faz
@@ -578,9 +555,9 @@ sobre = f'''
       alguém. É pouca luz e dura pouco, mas é o motivo pelo qual se abre o próximo pacote.
     </p>
     <p>
-      Hoje somos cinco pessoas atrás do balcão da Avenida Conselheiro Aguiar, com estoque próprio
-      e mesa de jogo aberta todo dia. O site é a mesma loja, só que com prateleira infinita e
-      envio para o Brasil inteiro.
+      A HOTARU é uma loja 100% virtual: não tem balcão nem endereço para visitar. Cada pedido é
+      separado com o mesmo cuidado de quem coleciona e enviado para o Brasil inteiro. E para quem
+      quer ir além da compra, o nosso canal do YouTube ensina mais sobre colecionismo de cartas.
     </p>
   </div>
 </section>
@@ -601,9 +578,9 @@ sobre = f'''
       <p>Sleeve, toploader e envelope rígido em todo pedido, do booster de R$ 34 ao graded de R$ 1.800. Não cobramos por isso.</p>
     </div>
     <div class="value">
-      <svg viewBox="0 0 24 24"><use href="#i-store"/></svg>
-      <h3>A loja existe</h3>
-      <p>Tem endereço, tem mesa e tem gente. Se preferir conferir a carta na mão antes de levar, é só aparecer.</p>
+      <svg viewBox="0 0 24 24"><use href="#i-yt"/></svg>
+      <h3>Colecionar se aprende</h3>
+      <p>No <a href="{YT}" target="_blank" rel="noopener">canal do YouTube</a> a gente ensina mais sobre colecionismo de cartas, para quem está no primeiro binder e para quem já tem a coleção organizada.</p>
     </div>
   </div>
 </section>
@@ -611,32 +588,19 @@ sobre = f'''
 <section class="store">
   <div class="wrap">
     <div>
-      <p class="eyebrow">Onde estamos</p>
-      <h2>Boa Viagem, a duas quadras da praia</h2>
-      <p>Mesa de jogo livre durante o horário comercial e torneio toda quinta às 19h. Avaliamos coleção na hora, sem agendar.</p>
-      <ul class="hours">
-        <li><span>Segunda a sexta</span><span>10h às 19h</span></li>
-        <li><span>Sábado</span><span>10h às 17h</span></li>
-        <li><span>Domingo</span><span>Fechado</span></li>
-        <li><span>Torneio semanal</span><span>Quinta, 19h</span></li>
-      </ul>
-      <a class="btn btn-gold" href="#contato">Falar com a loja</a>
+      <p class="eyebrow">No YouTube</p>
+      <h2>Aprenda mais sobre colecionismo</h2>
+      <p>No canal @Ericthm_ a gente ensina mais sobre colecionismo de cartas. É o lugar para entender a coleção, não só para comprar a próxima carta.</p>
+      <a class="btn btn-gold" href="{YT}" target="_blank" rel="noopener">Ver o canal</a>
     </div>
-    <div class="mapbox">
-      <div class="river"></div><div class="road a"></div><div class="road b"></div>
-      <svg class="pin" viewBox="0 0 24 24" aria-hidden="true"><use href="#i-pin"/></svg>
-      <div class="plate">
-        <b>HOTARU Colecionáveis</b>
-        Av. Conselheiro Aguiar, 2040 — Boa Viagem, Recife/PE
-      </div>
-    </div>
+    {CANAL}
   </div>
 </section>
 
 <section class="wrap">
   <div class="numbers">
     <div><strong>2.648</strong><span>produtos no catálogo</span></div>
-    <div><strong>5</strong><span>pessoas atrás do balcão</span></div>
+    <div><strong>100%</strong><span>loja virtual</span></div>
     <div><strong>4,9</strong><span>média de avaliação</span></div>
     <div><strong>2 dias</strong><span>entrega média no Recife</span></div>
   </div>
@@ -665,9 +629,9 @@ FAQ = [
     ("O que significa 'lacrado de fábrica'?",
      "Que o produto está exatamente como saiu da distribuidora, com o filme original intacto. "
      "Não abrimos, não conferimos por dentro e não revendemos caixa reembalada."),
-    ("Dá para retirar na loja?",
-     "Dá, e sem custo de frete. Escolha retirada no checkout e a gente separa o pedido; normalmente "
-     "fica pronto no mesmo dia. A loja fica na Av. Conselheiro Aguiar, 2040, Boa Viagem."),
+    ("Vocês têm loja física?",
+     "Não. A HOTARU é uma loja 100% virtual, sem endereço para visitar. Todo pedido sai embalado "
+     "e com código de rastreio para qualquer lugar do Brasil."),
     ("Como o pedido é embalado?",
      "Toda carta sai em sleeve e toploader, dentro de envelope rígido. Selados vão em caixa com "
      "preenchimento. Isso vale para qualquer valor de pedido e não é cobrado à parte."),
@@ -678,11 +642,14 @@ FAQ = [
      "Pode, em até 7 dias corridos depois do recebimento, com o item do jeito que chegou. Se o "
      "problema foi nosso, o frete de volta é por nossa conta."),
     ("Vocês compram coleção?",
-     "Compramos. Leve na loja durante o horário comercial que a avaliação sai na hora, sem "
-     "agendamento. Para coleções grandes, chame antes no WhatsApp."),
+     "Compramos. Mande fotos e a lista das cartas por e-mail e a gente responde com a avaliação. "
+     "Se fechar negócio, combinamos o envio."),
     ("Como funciona a pré-venda?",
      "Você garante a unidade pagando na hora, e o envio sai na data indicada no anúncio. Se a "
      "distribuidora atrasar, avisamos por e-mail e a devolução fica disponível a qualquer momento."),
+    ("Onde aprendo mais sobre colecionar cartas?",
+     f'No nosso <a href="{YT}" target="_blank" rel="noopener">canal do YouTube</a>, @Ericthm_, '
+     "onde a gente ensina mais sobre colecionismo de cartas."),
 ]
 
 faq_html = "\n".join(
@@ -725,7 +692,6 @@ ajuda = f'''
         <tr><td>Sudeste e Centro-Oeste</td><td>4 a 7 dias</td><td>R$ 32,90</td><td>Grátis</td></tr>
         <tr><td>Sul</td><td>5 a 8 dias</td><td>R$ 34,90</td><td>Grátis</td></tr>
         <tr><td>Norte</td><td>6 a 9 dias</td><td>R$ 39,90</td><td>Grátis</td></tr>
-        <tr><td>Retirada na loja (Boa Viagem)</td><td>No mesmo dia</td><td>Grátis</td><td>Grátis</td></tr>
       </tbody>
     </table>
   </div>
@@ -739,7 +705,7 @@ ajuda = f'''
     <p>Se o item chegou diferente do anunciado, danificado ou trocado, o erro é nosso: a gente manda
     a etiqueta de devolução e você escolhe entre reembolso integral ou a unidade correta.</p>
     <p>Para desistência sem defeito, o frete de retorno fica por conta de quem comprou. O reembolso
-    sai em até 5 dias úteis depois de o item chegar na loja e ser conferido.</p>
+    sai em até 5 dias úteis depois de o item voltar para a gente e ser conferido.</p>
   </div>
 </section>
 
