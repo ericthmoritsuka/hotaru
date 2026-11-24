@@ -11,6 +11,8 @@
 //   card    carta.html?c=<id da carta>&l=<idioma>, uma carta, com Adicionar
 //           ao carrinho
 //   order   pedido.html, o carrinho, o pedido e o Pix
+//   sealed, sealedone, homesealed  selados.html, selado.html?id=<produto> e
+//           a seção de selados da home (etapa 4), lidos de store_sealed
 // Toda página carrega o script, para o link Carrinho do cabeçalho mostrar
 // quantas cartas há nele.
 //
@@ -912,7 +914,7 @@
 				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
 					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
 					el('div', {class: 'cart-body'},
-						el('p', {class: 'cart-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}`}, item.name)),
+						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}`}, item.name)),
 						el('p', {class: 'cart-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, NOTICES[status][0]), ` ${NOTICES[status][1]}`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price))
@@ -1148,6 +1150,230 @@
 		root.replaceChildren(...shown.map(mineCard));
 	}
 
+	// ---------------------------------------------------------- sealed
+
+	// Os selados à venda (store_sealed): cada produto com as unidades
+	// disponíveis, que são o que o carrinho guarda.
+	async function readSealed() {
+		const rows = await rpc('store_sealed');
+
+		return (Array.isArray(rows) ? rows : []).map((row) => ({
+			category: row.category || '',
+			description: row.description || '',
+			id: row.id,
+			language: row.language || '',
+			name: row.name,
+			photos: Array.isArray(row.photos) ? row.photos : [],
+			price: Number(row.price_brl),
+			units: Array.isArray(row.units) ? row.units : [],
+		}));
+	}
+
+	const sealedHref = (product) => `selado.html?id=${encodeURIComponent(product.id)}`;
+
+	const sealedItem = (product, unit) => ({
+		cardId: null,
+		condition: null,
+		finish: null,
+		id: unit,
+		imagePath: product.photos[0] || null,
+		kind: 'sealed',
+		language: product.language,
+		name: product.name,
+		number: null,
+		price: product.price,
+		productId: product.id,
+		setName: product.category || null,
+	});
+
+	const sealedKind = (product) => [product.category || 'Selado', languageName(product.language)].filter(Boolean).join(' · ');
+
+	function sealedShot(product, {link = true} = {}) {
+		const url = pictureUrl(product.photos[0]);
+		const inner = url
+			? el('img', {alt: product.name, class: 'card-pic sealed-pic', decoding: 'async', loading: 'lazy', src: url})
+			: el('span', {class: 'card-pic card-pic-none sealed-pic'}, product.name);
+
+		return link ? el('a', {'aria-hidden': 'true', class: 'shot card-shot sealed-shot', href: sealedHref(product), tabindex: '-1'}, inner) : el('div', {class: 'shot card-shot sealed-shot'}, inner);
+	}
+
+	// Adicionar: uma unidade por toque, até acabarem as livres.
+	function sealedAdd(product) {
+		const button = el('button', {class: 'quick-add', type: 'button'});
+		const icon = () => {
+			const span = el('span', {'aria-hidden': 'true', class: 'quick-icon'});
+
+			span.innerHTML = '<svg width="16" height="16"><use href="#i-cart"/></svg>';
+
+			return span;
+		};
+
+		function draw() {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const free = product.units.filter((unit) => !inCart.has(unit));
+			const there = product.units.length - free.length;
+
+			button.disabled = !free.length;
+			button.classList.toggle('quick-in', there > 0);
+			button.setAttribute('aria-label', free.length ? `Adicionar ${product.name} ao carrinho` : `${product.name}: todos no carrinho`);
+			button.replaceChildren(icon(), there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar');
+		}
+
+		button.addEventListener('click', () => {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const unit = product.units.find((one) => !inCart.has(one));
+
+			if (!unit || readCart().length >= MAX_ORDER) {
+				return;
+			}
+
+			writeCart([...readCart(), sealedItem(product, unit)]);
+			draw();
+		});
+		draw();
+
+		return button;
+	}
+
+	function sealedTile(product) {
+		return el('article', {class: 'product card-item sealed-item'},
+			sealedShot(product),
+			el('div', {class: 'meta'},
+				el('span', {class: 'kind'}, sealedKind(product)),
+				el('h3', null, el('a', {href: sealedHref(product)}, product.name)),
+				el('div', {class: 'price'}, el('strong', null, brl(product.price))),
+				el('div', {class: 'card-foot'},
+					el('p', {class: 'card-count'}, available(product.units.length)),
+					sealedAdd(product)
+				)
+			)
+		);
+	}
+
+	function sealedGrid(root, products) {
+		root.replaceChildren(products.length
+			? el('div', {class: 'products cards-grid sealed-grid'}, products.map(sealedTile))
+			: message('Nenhum selado à venda agora. Volte em breve!'));
+	}
+
+	function sealedHome(root, products) {
+		const section = root.closest('section') || root;
+
+		if (!products.length) {
+			section.hidden = true;
+
+			return;
+		}
+
+		root.replaceChildren(el('div', {class: 'products cards-grid sealed-grid'}, products.slice(0, HOME_LIMIT).map(sealedTile)));
+		section.hidden = false;
+	}
+
+	function sealedOne(root, products) {
+		const id = new URLSearchParams(window.location.search).get('id');
+		const product = products.find((one) => one.id === id);
+
+		if (!product) {
+			root.replaceChildren(
+				message('Este produto não está mais à venda.'),
+				el('a', {class: 'btn btn-navy', href: 'selados.html'}, 'Ver os selados à venda')
+			);
+			document.title = 'Produto indisponível | HOTARU';
+
+			return;
+		}
+
+		document.title = `${product.name} | Selados | HOTARU`;
+
+		const main = sealedShot(product, {link: false});
+		const thumbs = product.photos.length > 1
+			? el('div', {class: 'sealed-thumbs'}, product.photos.map((path, i) => el('button', {'aria-label': `Foto ${i + 1}`, class: 'sealed-thumb', onclick: () => {
+				const img = main.querySelector('img');
+
+				if (img) {
+					img.src = pictureUrl(path);
+				}
+			}, type: 'button'}, el('img', {alt: '', loading: 'lazy', src: pictureUrl(path)}))))
+			: null;
+		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
+		const box = el('div', {class: 'buy-box'});
+
+		function drawBuy() {
+			const inCart = new Set(readCart().map((item) => item.id));
+			const free = product.units.filter((unit) => !inCart.has(unit));
+			const qty = el('select', {'aria-label': 'Quantidade', class: 'buy-qty'}, free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
+			const add = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+				const n = Number(qty.value) || 1;
+				const cart = readCart();
+
+				if (cart.length + n > MAX_ORDER) {
+					status.textContent = `Um pedido leva até ${MAX_ORDER} itens.`;
+
+					return;
+				}
+
+				writeCart([...cart, ...free.slice(0, n).map((unit) => sealedItem(product, unit))]);
+				drawBuy();
+				status.replaceChildren(n === 1 ? 'Adicionado ao carrinho. ' : `${n} adicionados ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+			}, type: 'button'}, 'Adicionar ao carrinho');
+
+			box.replaceChildren(el('div', {class: 'buy-line'},
+				el('p', {class: 'buy-label'}, el('strong', null, brl(product.price)), ` · ${available(product.units.length)}`),
+				free.length
+					? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, add)
+					: el('p', {class: 'buy-all-in'}, 'Todos estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho'))
+			), status);
+		}
+
+		drawBuy();
+
+		const facts = [
+			['Tipo', product.category],
+			['Idioma', languageName(product.language)],
+			['Disponível', available(product.units.length)],
+		].filter(([, value]) => value);
+
+		root.replaceChildren(el('div', {class: 'card-detail sealed-detail'},
+			el('div', {class: 'sealed-gallery'}, main, thumbs),
+			el('div', {class: 'card-info'},
+				el('p', {class: 'eyebrow'}, ['Selado', languageName(product.language)].filter(Boolean).join(' · ')),
+				el('h1', null, product.name),
+				el('p', {class: 'card-price'}, brl(product.price)),
+				el('dl', {class: 'card-facts'}, facts.map(([label, value]) => [el('dt', null, label), el('dd', null, value)])),
+				product.description ? el('p', {class: 'sealed-description'}, product.description) : null,
+				box,
+				el('p', {class: 'card-how'}, 'O carrinho não reserva o produto: ele fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('a', {class: 'card-back', href: 'selados.html'}, '← Todos os selados')
+			)
+		));
+	}
+
+	const SEALED_VIEWS = {homesealed: sealedHome, sealed: sealedGrid, sealedone: sealedOne};
+
+	async function startSealed(roots) {
+		let products;
+
+		try {
+			products = await readSealed();
+		}
+		catch {
+			for (const root of roots) {
+				if (root.dataset.catalog === 'homesealed') {
+					(root.closest('section') || root).hidden = true;
+				}
+				else {
+					root.replaceChildren(message('Não foi possível carregar os selados agora. Tente de novo em instantes.'));
+				}
+			}
+
+			return;
+		}
+
+		for (const root of roots) {
+			SEALED_VIEWS[root.dataset.catalog](root, products);
+		}
+	}
+
 	const VIEWS = {all, card: one, home};
 
 	async function start() {
@@ -1165,7 +1391,13 @@
 			order(orderRoot);
 		}
 
-		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot);
+		const sealedRoots = [...document.querySelectorAll('[data-catalog]')].filter((root) => SEALED_VIEWS[root.dataset.catalog]);
+
+		if (sealedRoots.length) {
+			startSealed(sealedRoots);
+		}
+
+		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot && !SEALED_VIEWS[root.dataset.catalog]);
 
 		if (!roots.length) {
 			return;

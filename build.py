@@ -263,6 +263,20 @@ home = f'''
   </div>
 </section>
 
+<section class="cartas-home selados-home" id="selados" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Selados</p>
+        <h2>Boosters e boxes lacrados</h2>
+        <p>Os selados à venda agora.</p>
+      </div>
+      <a class="more" href="selados.html">Ver todos</a>
+    </div>
+    <div data-catalog="homesealed"></div>
+  </div>
+</section>
+
 <section class="store" id="sobre">
   <div class="wrap">
     <div>
@@ -349,6 +363,60 @@ pedido = f'''
 
 page("pedido", "Carrinho — HOTARU", pedido)
 print("pedido.html")
+
+selados = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Selados</p>
+    <h1>Selados</h1>
+    <p>Boosters, boxes e outros produtos lacrados à venda agora, com fotos do próprio produto.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="sealed"><p class="card-note" role="status">Carregando os selados…</p></div>
+</section>
+'''
+
+page("selados", "Selados — HOTARU", selados, "selados.html")
+print("selados.html")
+
+selado = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="selados.html">Selados</a></p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="sealedone"><p class="card-note" role="status">Carregando o produto…</p></div>
+</section>
+'''
+
+page("selado", "Selado — HOTARU", selado, "selados.html")
+print("selado.html")
+
+# A administração dos selados: só para o Eric, sem link no site, fora dos
+# buscadores. O login é o do card tracker (assets/admin.js).
+ADMIN_V = hashlib.sha256((ROOT / "assets/admin.js").read_bytes()).hexdigest()[:10]
+admin = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <h1>Administração</h1>
+    <p>Os produtos selados da loja. As cartas têm preço na tela Shop do card tracker.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-admin><p class="card-note" role="status">Abrindo…</p></div>
+</section>
+<script type="module" src="assets/admin.js?v={ADMIN_V}"></script>
+'''
+
+page("admin", "Administração — HOTARU", admin)
+admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
+(ROOT / "admin.html").write_text(admin_html.replace("</head>", '<meta name="robots" content="noindex, nofollow">\n</head>', 1), encoding="utf-8")
+print("admin.html")
 
 meus = f'''
 <div class="pagehead">
