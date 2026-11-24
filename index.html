@@ -16,7 +16,7 @@
 <meta property="og:image" content="assets/og-image.jpg">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="assets/style.css?v=99a8de831f">
+<link rel="stylesheet" href="assets/style.css?v=ffec8edfc0">
 </head>
 <body>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
@@ -180,6 +180,7 @@
     <nav class="nav">
       <a href="index.html" aria-current="page">Início</a>
       <a href="avulsas.html">Cartas</a>
+      <a href="selados.html">Selados</a>
       <a href="sobre.html">Sobre nós</a>
       <a href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">YouTube</a>
       <a href="#contato">Contato</a>
@@ -215,29 +216,24 @@
         <a class="btn btn-ghost" href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">Ver o canal</a>
       </div>
     </div>
-    <div class="hero-cards">
-      <div class="tcard ">
-  <div class="tcard-inner">
-    <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner tr" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner bl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner br" aria-hidden="true"><use href="#i-corner"/></svg>
-    <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#m-booster"/></svg>
-    <span class="label">Selados</span>
-  </div>
-</div>
-      <div class="tcard ">
+    <!-- Uma carta por categoria à venda (Eric, 2026-11-24): cada uma leva à
+         sua página. Uma categoria nova ganha a sua carta aqui. -->
+    <nav class="hero-cards hero-cards-2" aria-label="Categorias">
+      <a class="tcard " href="avulsas.html" aria-label="Ver as cartas avulsas">
   <div class="tcard-inner">
     <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner tr" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner bl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner br" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#m-card"/></svg>
     <span class="label">Singles</span>
   </div>
-</div>
-      <div class="tcard ">
+</a>
+      <a class="tcard " href="selados.html" aria-label="Ver os selados">
   <div class="tcard-inner">
     <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner tr" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner bl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner br" aria-hidden="true"><use href="#i-corner"/></svg>
-    <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#m-sleeve"/></svg>
-    <span class="label">Coleção</span>
+    <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#m-booster"/></svg>
+    <span class="label">Selados</span>
   </div>
-</div>
-    </div>
+</a>
+    </nav>
   </div>
 </section>
 
@@ -246,12 +242,26 @@
     <div class="section-head">
       <div>
         <p class="eyebrow">Cartas avulsas</p>
-        <h2>À venda agora</h2>
-        <p>As cartas que acabaram de entrar no catálogo.</p>
+        <h2>Cartas em destaque</h2>
+        <p>Algumas das cartas à venda agora.</p>
       </div>
       <a class="more" href="avulsas.html">Ver todas</a>
     </div>
     <div data-catalog="home"></div>
+  </div>
+</section>
+
+<section class="cartas-home selados-home" id="selados" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Selados</p>
+        <h2>Boosters e boxes lacrados</h2>
+        <p>Os selados à venda agora.</p>
+      </div>
+      <a class="more" href="selados.html">Ver todos</a>
+    </div>
+    <div data-catalog="homesealed"></div>
   </div>
 </section>
 
@@ -297,7 +307,7 @@
   </div>
 </section>
 
-<script src="assets/catalogo.js?v=ca84fa5cf8" defer></script><footer class="foot" id="contato">
+<script src="assets/catalogo.js?v=5450fab2c2" defer></script><footer class="foot" id="contato">
   <div class="wrap">
     <div class="foot-top">
       <div class="about">

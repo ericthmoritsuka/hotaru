@@ -139,14 +139,16 @@ def corners():
     )
 
 
-def tcard(motif, label, cls=""):
-    return f'''<div class="tcard {cls}">
+def tcard(motif, label, cls="", href=None, title=None):
+    # Com href, a carta é um link: as cartas da hero levam às categorias.
+    tag, attrs = ("a", f' href="{href}" aria-label="{title or label}"') if href else ("div", "")
+    return f'''<{tag} class="tcard {cls}"{attrs}>
   <div class="tcard-inner">
     {corners()}
     <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#{motif}"/></svg>
     <span class="label">{label}</span>
   </div>
-</div>'''
+</{tag}>'''
 
 
 def card(p):
@@ -259,11 +261,12 @@ home = f'''
         <a class="btn btn-ghost" href="{YT}" target="_blank" rel="noopener">Ver o canal</a>
       </div>
     </div>
-    <div class="hero-cards">
-      {tcard("m-booster", "Selados")}
-      {tcard("m-card", "Singles")}
-      {tcard("m-sleeve", "Coleção")}
-    </div>
+    <!-- Uma carta por categoria à venda (Eric, 2026-11-24): cada uma leva à
+         sua página. Uma categoria nova ganha a sua carta aqui. -->
+    <nav class="hero-cards hero-cards-2" aria-label="Categorias">
+      {tcard("m-card", "Singles", href="avulsas.html", title="Ver as cartas avulsas")}
+      {tcard("m-booster", "Selados", href="selados.html", title="Ver os selados")}
+    </nav>
   </div>
 </section>
 
@@ -272,12 +275,26 @@ home = f'''
     <div class="section-head">
       <div>
         <p class="eyebrow">Cartas avulsas</p>
-        <h2>À venda agora</h2>
-        <p>As cartas que acabaram de entrar no catálogo.</p>
+        <h2>Cartas em destaque</h2>
+        <p>Algumas das cartas à venda agora.</p>
       </div>
       <a class="more" href="avulsas.html">Ver todas</a>
     </div>
     <div data-catalog="home"></div>
+  </div>
+</section>
+
+<section class="cartas-home selados-home" id="selados" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Selados</p>
+        <h2>Boosters e boxes lacrados</h2>
+        <p>Os selados à venda agora.</p>
+      </div>
+      <a class="more" href="selados.html">Ver todos</a>
+    </div>
+    <div data-catalog="homesealed"></div>
   </div>
 </section>
 
@@ -367,6 +384,60 @@ pedido = f'''
 
 page("pedido", "Carrinho — HOTARU", pedido)
 print("pedido.html")
+
+selados = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Selados</p>
+    <h1>Selados</h1>
+    <p>Boosters, boxes e outros produtos lacrados à venda agora, com fotos do próprio produto.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="sealed"><p class="card-note" role="status">Carregando os selados…</p></div>
+</section>
+'''
+
+page("selados", "Selados — HOTARU", selados, "selados.html")
+print("selados.html")
+
+selado = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="selados.html">Selados</a></p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="sealedone"><p class="card-note" role="status">Carregando o produto…</p></div>
+</section>
+'''
+
+page("selado", "Selado — HOTARU", selado, "selados.html")
+print("selado.html")
+
+# A administração dos selados: só para o Eric, sem link no site, fora dos
+# buscadores. O login é o do card tracker (assets/admin.js).
+ADMIN_V = hashlib.sha256((ROOT / "assets/admin.js").read_bytes()).hexdigest()[:10]
+admin = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <h1>Administração</h1>
+    <p>Os produtos selados da loja. As cartas têm preço na tela Shop do card tracker.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-admin><p class="card-note" role="status">Abrindo…</p></div>
+</section>
+<script type="module" src="assets/admin.js?v={ADMIN_V}"></script>
+'''
+
+page("admin", "Administração — HOTARU", admin)
+admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
+(ROOT / "admin.html").write_text(admin_html.replace("</head>", '<meta name="robots" content="noindex, nofollow">\n</head>', 1), encoding="utf-8")
+print("admin.html")
 
 meus = f'''
 <div class="pagehead">
