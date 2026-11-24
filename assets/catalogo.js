@@ -48,6 +48,10 @@
 	// O carrinho aberto confere as cartas a cada minuto.
 	const RECHECK_MS = 60000;
 	const MAX_ORDER = 20;
+	// O comprovante: foto, captura ou PDF de até 5 MB, como o bucket
+	// store-receipts aceita.
+	const RECEIPT_TYPES = {'application/pdf': 'pdf', 'image/heic': 'heic', 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp'};
+	const RECEIPT_MAX = 5 * 1024 * 1024;
 
 	const LANGUAGES = {
 		de: 'Alemão',
@@ -569,6 +573,90 @@
 		}
 	}
 
+	// Envia o comprovante para o bucket privado, sob o código secreto do
+	// pedido, e o registra no pedido. Lança um erro com a mensagem a mostrar.
+	async function sendReceipt(order, file) {
+		const ext = RECEIPT_TYPES[file.type];
+
+		if (!ext) {
+			throw new Error('Envie uma foto (JPG, PNG, WEBP ou HEIC) ou um PDF.');
+		}
+
+		if (file.size > RECEIPT_MAX) {
+			throw new Error('O arquivo passa de 5 MB. Envie uma captura de tela do comprovante.');
+		}
+
+		const random = Array.from(crypto.getRandomValues(new Uint8Array(8)), (n) => n.toString(16).padStart(2, '0')).join('');
+		const path = `${order.receiptToken}/${random}.${ext}`;
+		const upload = await fetch(`${SUPABASE_URL}/storage/v1/object/store-receipts/${path}`, {
+			body: file,
+			headers: {apikey: SUPABASE_KEY, 'Content-Type': file.type, 'x-upsert': 'false'},
+			method: 'POST',
+		}).catch(() => null);
+
+		if (!upload || !upload.ok) {
+			throw new Error('O comprovante não foi enviado. Confira a conexão e tente de novo, ou mande para ' + EMAIL + '.');
+		}
+
+		await rpc('attach_receipt', {path, token: order.receiptToken});
+	}
+
+	// Já pagou? Envie o comprovante: só enquanto o pedido espera pagamento.
+	function receiptBox(order) {
+		const status = el('p', {'aria-live': 'polite', class: 'receipt-status'});
+
+		if (order.receiptSent) {
+			return el('div', {class: 'receipt'}, el('p', {class: 'receipt-done'}, 'Comprovante enviado. O Eric confere o pagamento e fala com você.'));
+		}
+
+		if (!order.receiptToken) {
+			return null;
+		}
+
+		const input = el('input', {accept: 'image/jpeg,image/png,image/webp,image/heic,application/pdf', class: 'receipt-file', id: 'receipt-file', type: 'file'});
+		const button = el('button', {class: 'btn btn-navy', type: 'button'}, 'Enviar comprovante');
+		const box = el('div', {class: 'receipt'},
+			el('h3', null, 'Já pagou? Envie o comprovante'),
+			el('p', null, 'Uma foto ou captura de tela do comprovante do Pix ajuda o Eric a conferir o pagamento. Só o Eric vê.'),
+			el('label', {class: 'receipt-label', for: 'receipt-file'}, 'Comprovante'),
+			input,
+			button,
+			status
+		);
+
+		button.addEventListener('click', async () => {
+			const file = input.files && input.files[0];
+
+			if (!file) {
+				status.textContent = 'Escolha o arquivo do comprovante.';
+				input.focus();
+
+				return;
+			}
+
+			button.disabled = true;
+			status.textContent = 'Enviando…';
+
+			try {
+				await sendReceipt(order, file);
+
+				const kept = readLastOrder();
+
+				if (kept && kept.code === order.code) {
+					keepLastOrder({...kept, receiptSent: true});
+				}
+
+				box.replaceWith(receiptBox({...order, receiptSent: true}));
+			}
+			catch (err) {
+				button.disabled = false;
+				status.textContent = err.message || 'O comprovante não foi enviado. Tente de novo.';
+			}
+		});
+
+		return box;
+	}
+
 	// O pedido fechado: o código, o total, o prazo e o Pix.
 	function confirmation(order) {
 		const Pix = window.HotaruPix;
@@ -610,6 +698,7 @@
 				),
 				el('p', {class: 'pix-who'}, `Quem recebe: ${Pix.RECEIVER.name}. No app do banco aparece o nome completo do Eric.`)
 			) : message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.'),
+			receiptBox(order),
 			el('p', null, 'Depois de pagar, é só aguardar: o Eric confere o pagamento e combina a entrega com você pelo telefone que você deixou. Sem pagamento até o prazo, o pedido é cancelado e as cartas voltam para o catálogo.'),
 			el('ul', {class: 'order-items'}, (order.items || []).map((item) => el('li', null, `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`))),
 			el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Continuar vendo as cartas')
@@ -653,15 +742,21 @@
 			draw();
 		}
 
+		// O último pedido, enquanto o prazo para pagar não acabou.
+		function openOrder() {
+			const last = readLastOrder();
+
+			return last && Date.parse(last.reservedUntil) > Date.now() ? last : null;
+		}
+
 		function draw() {
 			const cart = readCart();
 
 			if (!cart.length) {
 				stopTimer();
 
-				// O último pedido, enquanto o prazo para pagar não acabou.
-				const last = readLastOrder();
-				const open = last && Date.parse(last.reservedUntil) > Date.now();
+				const last = openOrder();
+				const open = Boolean(last);
 
 				root.replaceChildren(...(open ? [confirmation(last)] : [message('Seu carrinho está vazio.'), el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Ver as cartas à venda')]));
 
@@ -694,7 +789,15 @@
 			submit.disabled = busy || !checked || !free.length;
 
 			if (!root.contains(form)) {
+				// Um pedido esperando pagamento fica à mão acima do carrinho, para
+				// o Pix não se perder quando sobram cartas nele.
+				const last = openOrder();
+
 				root.replaceChildren(
+					last ? el('details', {class: 'order-open'},
+						el('summary', null, `Pedido ${last.code} aguardando pagamento: ver o Pix`),
+						confirmation(last)
+					) : '',
 					el('h2', {class: 'cart-head'}, 'Seu carrinho'),
 					noticeLine,
 					list,
@@ -790,7 +893,7 @@
 			}
 
 			const ordered = new Set(items.map((item) => item.id));
-			const done = {code: result.code, items, reservedUntil: result.reserved_until, total: Number(result.total)};
+			const done = {code: result.code, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
 
 			keepLastOrder(done);
 			writeCart(readCart().filter((item) => !ordered.has(item.id)));

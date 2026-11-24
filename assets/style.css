@@ -1080,3 +1080,18 @@ section { padding: 76px 0; }
 .pix-copied { font-size: 0.86rem; color: var(--gold-dk); font-weight: 600; }
 .pix-who { font-size: 0.8rem; color: var(--ink-soft); margin: 0; }
 .order-items { margin: 0 0 22px; padding-left: 18px; font-size: 0.88rem; color: var(--ink-soft); }
+
+/* O comprovante, depois do Pix. */
+.receipt { margin: 0 0 20px; padding: 18px; border-radius: 14px; background: var(--ivory); display: grid; gap: 10px; }
+.receipt h3 { font-size: 1.05rem; margin: 0; }
+.receipt p { margin: 0; font-size: 0.88rem; color: var(--ink-soft); }
+.receipt-label { font-size: 0.86rem; font-weight: 600; }
+.receipt-file { font: inherit; font-size: 0.88rem; max-width: 100%; }
+.receipt .btn { justify-self: start; }
+.receipt .btn:disabled { opacity: 0.5; cursor: default; }
+.receipt-status { color: var(--gold-dk); font-weight: 600; }
+.receipt-status:empty { display: none; }
+.receipt-done { color: var(--ink) !important; font-weight: 600; }
+.order-open { margin: 0 0 26px; padding: 14px 16px; border-radius: 12px; background: #fff; border: 1px solid var(--gold); }
+.order-open summary { cursor: pointer; font-weight: 600; color: var(--gold-dk); }
+.order-open[open] summary { margin-bottom: 14px; }
