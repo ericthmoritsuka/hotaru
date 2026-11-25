@@ -100,7 +100,7 @@ async function phone(browser, state) {
 			return json(state.kitLive ? [kitRow()] : []);
 		}
 
-		if (name === 'store_sealed') {
+		if (name === 'store_sealed' || name === 'store_featured') {
 			return json([]);
 		}
 

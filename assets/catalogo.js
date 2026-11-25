@@ -263,6 +263,19 @@
 		return Array.isArray(rows) ? rows : [];
 	}
 
+	// Os destaques (Eric, 2026-11-25): cartas, coleções e selados que ele
+	// escolhe em admin.html para aparecer primeiro, na ordem dele
+	// (store_featured, supabase/store-featured.sql no card tracker). Sem
+	// resposta do banco, não há destaque e as páginas ficam como antes. As
+	// cartas e os selados leem a mesma resposta.
+	let featuredRead = null;
+
+	function readFeatured() {
+		featuredRead = featuredRead || rpc('store_featured').then((rows) => (Array.isArray(rows) ? rows : []), () => []);
+
+		return featuredRead;
+	}
+
 	// ------------------------------------------------------------ cart
 
 	// O carrinho: as cópias escolhidas, com o que a página precisa para
@@ -454,11 +467,14 @@
 		return button;
 	}
 
+	// A marca de um destaque, antes do tipo do anúncio.
+	const featuredMark = () => el('span', {class: 'featured-mark'}, 'Destaque');
+
 	function tile(group) {
 		return el('article', {class: 'product card-item'},
 			shot(group),
 			el('div', {class: 'meta'},
-				el('span', {class: 'kind'}, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
+				el('span', {class: 'kind'}, group.featured ? featuredMark() : null, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
 				el('h3', null, el('a', {'aria-label': plainFinish(group.finish) ? null : fullName(group), href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
@@ -480,9 +496,88 @@
 
 	const message = (text, cls = 'card-note') => el('p', {class: cls, role: 'status'}, text);
 
+	// -------------------------------------------------------- featured
+
+	// Uma carta em destaque é um anúncio: a carta num idioma e num
+	// acabamento, com a mesma chave que groupCards dá a ele.
+	const featuredKey = (item) => `${item.card_id}|${item.language || ''}|${(item.finish && finishName(item.finish)) || ''}`;
+
+	// Os destaques de cartas na ordem do Eric: {group} para uma carta,
+	// {set, groups} para uma coleção inteira. O que não está à venda agora
+	// fica de fora e volta sozinho quando estiver. Marca os anúncios em
+	// destaque, para o tile mostrar a marca.
+	function featuredCards(groups, featured) {
+		const byKey = new Map(groups.map((group) => [group.key, group]));
+		const picks = [];
+
+		for (const item of featured) {
+			if (item.kind === 'card') {
+				const group = byKey.get(featuredKey(item));
+
+				if (group && !group.featured) {
+					group.featured = true;
+					picks.push({group});
+				}
+			}
+			else if (item.kind === 'set') {
+				const inSet = groups.filter((group) => group.setName === item.set_name);
+
+				if (inSet.length) {
+					picks.push({groups: inSet, set: item.set_name});
+				}
+			}
+		}
+
+		return picks;
+	}
+
+	const setHref = (name) => `avulsas.html?colecao=${encodeURIComponent(name)}`;
+
+	// Uma coleção em destaque: a carta mais cara dela na foto, quantas cartas
+	// estão à venda e o menor preço. Leva às cartas da coleção; na própria
+	// página de cartas, onOpen só aplica o filtro.
+	function setTile(pick, {onOpen} = {}) {
+		const cover = [...pick.groups].sort((a, b) => b.price - a.price)[0];
+		const url = pictureUrl(cover.imagePath);
+		const lowest = Math.min(...pick.groups.map((group) => group.price));
+		const open = onOpen
+			? (event) => {
+				event.preventDefault();
+				onOpen(pick.set);
+			}
+			: null;
+		const count = pick.groups.length === 1 ? '1 carta à venda' : `${pick.groups.length} cartas à venda`;
+
+		return el('article', {class: 'product card-item set-item'},
+			el('a', {'aria-hidden': 'true', class: 'shot card-shot set-shot', href: setHref(pick.set), onclick: open, tabindex: '-1'},
+				url
+					? el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+					: el('span', {class: 'card-pic card-pic-none'}, pick.set)),
+			el('div', {class: 'meta'},
+				el('span', {class: 'kind'}, featuredMark(), 'Coleção'),
+				el('h3', null, el('a', {href: setHref(pick.set), onclick: open}, pick.set)),
+				el('p', {class: 'card-set'}, count),
+				el('div', {class: 'price'}, el('span', {class: 'set-from'}, 'a partir de'), el('strong', null, brl(lowest))),
+				el('div', {class: 'card-foot'},
+					el('span', {class: 'quick-add quick-choose set-open'}, 'Ver a coleção')
+				)
+			)
+		);
+	}
+
+	const pickTile = (pick, options) => (pick.set ? setTile(pick, options) : tile(pick.group));
+
+	// A faixa Em destaque no alto de uma página.
+	function featuredBand(tiles, label) {
+		return el('section', {'aria-label': label, class: 'featured'},
+			el('h2', {class: 'featured-title'}, label),
+			carousel(tiles, label)
+		);
+	}
+
 	// ------------------------------------------------------------ home
 
-	function home(root, groups) {
+	function home(root, groups, featured = []) {
 		const section = root.closest('section') || root;
 
 		if (!groups.length) {
@@ -491,7 +586,13 @@
 			return;
 		}
 
-		const shown = [...groups].sort((a, b) => b.price - a.price || b.newest.localeCompare(a.newest)).slice(0, CAROUSEL_LIMIT);
+		// Os destaques do Eric primeiro, na ordem dele; depois as de maior
+		// preço até completar o carrossel.
+		const picks = featuredCards(groups, featured);
+		const rest = [...groups]
+			.filter((group) => !group.featured)
+			.sort((a, b) => b.price - a.price || b.newest.localeCompare(a.newest))
+			.slice(0, Math.max(0, CAROUSEL_LIMIT - picks.length));
 
 		// O último item leva a todas as cartas (Eric, 2026-11-24).
 		const all = el('a', {class: 'carousel-all', href: 'avulsas.html'},
@@ -499,7 +600,7 @@
 			el('span', {class: 'carousel-all-text'}, 'Ver todas as cartas →'));
 
 		root.replaceChildren(
-			carousel([...shown.map(tile), all], 'Cartas em destaque'),
+			carousel([...picks.map((pick) => pickTile(pick)), ...rest.map(tile), all], 'Cartas em destaque'),
 			el('div', {class: 'carousel-foot'}, el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, groups.length === 1 ? 'Ver a carta à venda' : `Ver todas as ${groups.length} cartas`))
 		);
 		section.hidden = false;
@@ -569,7 +670,7 @@
 
 	// ------------------------------------------------------- all cards
 
-	function all(root, groups) {
+	function all(root, groups, featured = []) {
 		if (!groups.length) {
 			root.replaceChildren(message('Nenhuma carta à venda agora. Volte em breve!'));
 
@@ -618,7 +719,29 @@
 			control.addEventListener(control === search ? 'input' : 'change', draw);
 		}
 
-		root.replaceChildren(el('div', {class: 'card-filters'}, search, setSelect, languageSelect, sortSelect), count, grid);
+		// avulsas.html?colecao=<nome> abre já filtrada, como os destaques de
+		// coleção da home levam.
+		const wanted = new URLSearchParams(window.location.search).get('colecao');
+
+		if (wanted && sets.includes(wanted)) {
+			setSelect.value = wanted;
+		}
+
+		// Uma coleção em destaque, nesta página, só filtra a grade.
+		const openSet = (name) => {
+			search.value = '';
+			setSelect.value = name;
+			draw();
+			count.scrollIntoView({behavior: 'smooth', block: 'start'});
+		};
+		const picks = featuredCards(groups, featured);
+		const filters = el('div', {class: 'card-filters'}, search, setSelect, languageSelect, sortSelect);
+
+		root.replaceChildren(
+			picks.length ? featuredBand(picks.map((pick) => pickTile(pick, {onOpen: openSet})), 'Em destaque') : '',
+			picks.length ? el('h2', {class: 'featured-title'}, 'Todas as cartas') : '',
+			filters, count, grid
+		);
 		draw();
 	}
 
@@ -1535,7 +1658,7 @@
 		return el('article', {class: 'product card-item sealed-item'},
 			sealedShot(product),
 			el('div', {class: 'meta'},
-				el('span', {class: 'kind'}, sealedKind(product)),
+				el('span', {class: 'kind'}, product.featured ? featuredMark() : null, sealedKind(product)),
 				el('h3', null, el('a', {href: sealedHref(product)}, product.name)),
 				el('div', {class: 'price'}, el('strong', null, brl(product.price))),
 				el('div', {class: 'card-foot'},
@@ -1546,10 +1669,45 @@
 		);
 	}
 
+	// Os selados em destaque primeiro, na ordem do Eric, marcados; os outros
+	// depois, na ordem de sempre. Um destaque sem unidade à venda não vem na
+	// lista, então fica de fora sozinho.
+	function featuredFirst(products, featured) {
+		const rank = new Map();
+
+		for (const item of featured) {
+			if (item.kind === 'product' && !rank.has(item.product_id)) {
+				rank.set(item.product_id, rank.size);
+			}
+		}
+
+		for (const product of products) {
+			product.featured = rank.has(product.id);
+		}
+
+		const place = (product) => (rank.has(product.id) ? rank.get(product.id) : rank.size);
+
+		return [...products].sort((a, b) => place(a) - place(b));
+	}
+
 	function sealedGrid(root, products) {
-		root.replaceChildren(products.length
-			? el('div', {class: 'products cards-grid sealed-grid'}, products.map(sealedTile))
-			: message('Nenhum selado à venda agora. Volte em breve!'));
+		if (!products.length) {
+			root.replaceChildren(message('Nenhum selado à venda agora. Volte em breve!'));
+
+			return;
+		}
+
+		const top = products.filter((product) => product.featured);
+		const rest = products.filter((product) => !product.featured);
+		const grid = (list) => el('div', {class: 'products cards-grid sealed-grid'}, list.map(sealedTile));
+
+		root.replaceChildren(...(top.length
+			? [
+				el('section', {'aria-label': 'Em destaque', class: 'featured'}, el('h2', {class: 'featured-title'}, 'Em destaque'), grid(top)),
+				rest.length ? el('h2', {class: 'featured-title'}, 'Todos os selados') : '',
+				rest.length ? grid(rest) : '',
+			]
+			: [grid(products)]));
 	}
 
 	function sealedHome(root, products) {
@@ -1650,7 +1808,9 @@
 		let products;
 
 		try {
-			products = await readSealed();
+			const [rows, featured] = await Promise.all([readSealed(), readFeatured()]);
+
+			products = featuredFirst(rows, featured);
 		}
 		catch {
 			for (const root of roots) {
@@ -1981,9 +2141,13 @@
 		}
 
 		let groups;
+		let featured;
 
 		try {
-			groups = groupCards(await readCatalog());
+			const [rows, picks] = await Promise.all([readCatalog(), readFeatured()]);
+
+			groups = groupCards(rows);
+			featured = picks;
 		}
 		catch {
 			for (const root of roots) {
@@ -2002,7 +2166,7 @@
 			const view = VIEWS[root.dataset.catalog];
 
 			if (view) {
-				view(root, groups);
+				view(root, groups, featured);
 			}
 		}
 	}
