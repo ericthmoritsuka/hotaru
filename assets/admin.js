@@ -12,7 +12,12 @@
 // Cada produto tem nome, tipo, idioma, descrição, preço, fotos (a primeira
 // é a capa) e quantos estão à venda agora. As fotos são reduzidas aqui
 // antes de subir para o bucket público store, em sealed/<produto>/.
+//
+// A aba Blog (Eric, 2026-11-25) escreve os posts num editor visual (Quill,
+// em assets/vendor, carregado pela página antes deste módulo). As fotos dos
+// posts vão para blog/<post>/ no mesmo bucket.
 
+import {YT_EMBED, blogPhotoUrl, isBlogPath, plainText, postDate, renderPost, youtubeId} from './blog-render.js';
 import {createClient} from './vendor/supabase-js-2.117.2.js';
 
 const SUPABASE_URL = 'https://ehdkbxrjxsypegbtrxbw.supabase.co';
@@ -154,8 +159,10 @@ async function shrink(file) {
 
 const randomName = () => Array.from(crypto.getRandomValues(new Uint8Array(8)), (n) => n.toString(16).padStart(2, '0')).join('');
 
-async function upload(productId, blob) {
-	const path = `sealed/${productId}/${randomName()}.jpg`;
+// Sobe uma foto já reduzida para a pasta (sealed/<produto>/ ou
+// blog/<post>/) e devolve o caminho dela no bucket.
+async function uploadTo(folder, blob) {
+	const path = `${folder}${randomName()}.jpg`;
 	// The bytes with their type, as the card tracker uploads its photos, so
 	// the bucket sees image/jpeg rather than a form.
 	const {error} = await client.storage.from(BUCKET).upload(path, await blob.arrayBuffer(), {cacheControl: '31536000', contentType: 'image/jpeg', upsert: false});
@@ -166,6 +173,8 @@ async function upload(productId, blob) {
 
 	return path;
 }
+
+const upload = (productId, blob) => uploadTo(`sealed/${productId}/`, blob);
 
 // --------------------------------------------------------------- form
 
@@ -369,14 +378,15 @@ async function showList(notice = '') {
 	);
 }
 
-// As duas partes da administração: os selados e os destaques.
-function tabs(current) {
+// As partes da administração: os selados, os destaques e o blog. canLeave
+// pergunta antes de sair de uma tela com alterações não salvas.
+function tabs(current, canLeave = () => true) {
 	const tab = (id, label, open) => el('button', {
 		'aria-current': current === id ? 'page' : null,
 		class: `btn ${current === id ? 'btn-gold' : 'btn-navy'}`,
 		id: `admin-tab-${id}`,
 		onclick: () => {
-			if (current !== id) {
+			if (current !== id && canLeave()) {
 				open();
 			}
 		},
@@ -385,7 +395,8 @@ function tabs(current) {
 
 	return el('nav', {'aria-label': 'Administração', class: 'admin-tabs'},
 		tab('selados', 'Selados', () => showList()),
-		tab('destaques', 'Destaques', () => showFeatured())
+		tab('destaques', 'Destaques', () => showFeatured()),
+		tab('blog', 'Blog', () => showPosts())
 	);
 }
 
@@ -659,17 +670,8 @@ async function showFeatured(notice = '') {
 		showFeatured('Destaques salvos. O site já mostra a nova ordem.');
 	});
 
-	const back = () => {
-		if (!dirty || window.confirm('Sair sem salvar os destaques?')) {
-			showList();
-		}
-	};
-
 	root.replaceChildren(
-		el('nav', {'aria-label': 'Administração', class: 'admin-tabs'},
-			el('button', {class: 'btn btn-navy', id: 'admin-tab-selados', onclick: back, type: 'button'}, 'Selados'),
-			el('button', {'aria-current': 'page', class: 'btn btn-gold', id: 'admin-tab-destaques', type: 'button'}, 'Destaques')
-		),
+		tabs('destaques', () => !dirty || window.confirm('Sair sem salvar os destaques?')),
 		el('div', {class: 'admin-featured'},
 			el('p', {class: 'admin-hint'}, 'O que fica no alto do site, nesta ordem. Cartas e coleções aparecem primeiro na home e em Cartas avulsas; selados, primeiro em Selados e na home.'),
 			el('section', {'aria-labelledby': 'admin-featured-cards'},
@@ -689,6 +691,514 @@ async function showFeatured(notice = '') {
 		)
 	);
 	draw();
+}
+
+// ---------------------------------------------------------------- blog
+
+// Os posts do blog (Eric, 2026-11-25): rascunho até o Eric publicar, com
+// categoria, capa, resumo e o texto no editor visual. O banco guarda o texto
+// no formato do editor (Delta), com cada foto como o caminho dela em
+// blog/<post>/ e cada vídeo como o ID do YouTube; as páginas públicas o
+// montam com assets/blog-render.js. Salvar não sai do post: o Eric continua
+// escrevendo, e Voltar leva à lista.
+
+const BLOG_CATEGORIES = ['Pokémon TCG', 'Coleção', 'Outros'];
+const PUBLIC_PREFIX = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/`;
+const POST_FORMATS = ['header', 'bold', 'italic', 'underline', 'strike', 'link', 'blockquote', 'list', 'image', 'video'];
+const POST_TOOLBAR = [
+	[{header: [2, 3, false]}],
+	['bold', 'italic', 'underline', 'strike'],
+	[{list: 'ordered'}, {list: 'bullet'}, 'blockquote'],
+	['link', 'image', 'video'],
+	['clean'],
+];
+
+// Do banco para o editor: caminhos de foto viram links, IDs de vídeo viram o
+// endereço do player.
+function toEditor(body) {
+	const ops = body && Array.isArray(body.ops) ? body.ops : [];
+
+	return {ops: ops.map((op) => {
+		if (op && op.insert && typeof op.insert === 'object') {
+			if (typeof op.insert.image === 'string') {
+				return {...op, insert: {image: blogPhotoUrl(op.insert.image) || ''}};
+			}
+
+			if (typeof op.insert.video === 'string') {
+				return {...op, insert: {video: `${YT_EMBED}${op.insert.video}`}};
+			}
+		}
+
+		return op;
+	})};
+}
+
+// O caminho de uma foto que já está na pasta do post, ou null.
+function folderPath(src, folder) {
+	if (typeof src !== 'string' || !src.startsWith(PUBLIC_PREFIX)) {
+		return null;
+	}
+
+	const path = src.slice(PUBLIC_PREFIX.length);
+
+	return isBlogPath(path) && path.startsWith(folder) ? path : null;
+}
+
+// Do editor para o banco. Uma foto colada como dados (um print colado, por
+// exemplo) é reduzida e sobe para a pasta do post; uma foto de outro site
+// sai do texto, porque o banco só aceita fotos da pasta do post. Sem upload
+// (upload false), como na prévia, essas fotos só ficam de fora. Devolve o
+// texto e quantas fotos saíram.
+async function fromEditor(delta, folder, {upload: send = true} = {}) {
+	const ops = [];
+	let removed = 0;
+
+	for (const op of delta.ops) {
+		if (op.insert && typeof op.insert === 'object') {
+			if (typeof op.insert.image === 'string') {
+				let path = folderPath(op.insert.image, folder);
+
+				if (!path && send && op.insert.image.startsWith('data:image/')) {
+					const blob = await (await fetch(op.insert.image)).blob();
+
+					path = await uploadTo(folder, await shrink(new File([blob], 'foto colada', {type: blob.type})));
+				}
+
+				if (path) {
+					ops.push({...op, insert: {image: path}});
+				}
+				else {
+					removed += 1;
+				}
+			}
+			else if (typeof op.insert.video === 'string') {
+				const id = youtubeId(op.insert.video);
+
+				if (id) {
+					ops.push({...op, insert: {video: id}});
+				}
+				else {
+					removed += 1;
+				}
+			}
+			else {
+				removed += 1;
+			}
+
+			continue;
+		}
+
+		ops.push(op);
+	}
+
+	return {body: {ops}, removed};
+}
+
+// O post como o site vai mostrar, para a prévia.
+function postPreview({body, category, cover, date, title}) {
+	return el('article', {class: 'post admin-preview'},
+		el('header', {class: 'post-head'},
+			category ? el('p', {class: 'eyebrow post-category'}, category) : '',
+			el('h1', null, title || 'Sem título'),
+			el('p', {class: 'post-date'}, date)
+		),
+		cover ? el('img', {alt: '', class: 'post-cover', src: cover}) : '',
+		el('div', {class: 'post-body'}, renderPost(body, {title}))
+	);
+}
+
+function postForm(post, {categories, onBack}) {
+	const id = post ? post.id : crypto.randomUUID();
+	const folder = `blog/${id}/`;
+	// O post como está no banco; null até o primeiro salvamento.
+	let saved = post;
+	// A capa: o caminho no bucket, uma foto nova ({file, url}) ou nada.
+	let cover = post && post.cover ? post.cover : null;
+	let busy = false;
+	let dirty = false;
+
+	const title = el('input', {id: 'admin-post-title', maxlength: 140, required: true, type: 'text', value: post ? post.title : ''});
+	const category = el('input', {id: 'admin-post-category', list: 'admin-post-categories', maxlength: 40, type: 'text', value: post ? post.category || '' : ''});
+	const categoryList = el('datalist', {id: 'admin-post-categories'}, categories.map((one) => el('option', {value: one})));
+	const summary = el('textarea', {id: 'admin-post-summary', maxlength: 300, rows: 2}, post ? post.summary || '' : '');
+	const coverFile = el('input', {accept: 'image/*', id: 'admin-post-cover', type: 'file'});
+	const coverBox = el('div', {class: 'admin-photos admin-post-cover'});
+	const editorBox = el('div', {class: 'admin-editor', id: 'admin-editor'});
+	const editorWrap = el('div', {class: 'admin-editor-wrap'}, editorBox);
+	const videoInput = el('input', {'aria-label': 'Link do vídeo do YouTube', class: 'admin-search', id: 'admin-video-link', placeholder: 'Cole o link do vídeo do YouTube', type: 'url'});
+	const videoPanel = el('div', {class: 'admin-video', hidden: true});
+	const imageFiles = el('input', {accept: 'image/*', hidden: true, id: 'admin-post-images', multiple: true, type: 'file'});
+	const preview = el('div', {class: 'admin-preview-box', hidden: true});
+	const status = el('p', {'aria-live': 'polite', class: 'admin-status', id: 'admin-post-status'});
+	const buttons = el('div', {class: 'admin-actions admin-save-bar'});
+	let videoRange = null;
+
+	const quill = new window.Quill(editorBox, {
+		formats: POST_FORMATS,
+		modules: {
+			toolbar: {
+				container: POST_TOOLBAR,
+				handlers: {
+					image: () => imageFiles.click(),
+					video: () => {
+						videoRange = quill.getSelection(true);
+						videoPanel.hidden = false;
+						videoInput.value = '';
+						videoInput.focus();
+					},
+				},
+			},
+			uploader: {
+				handler: (range, files) => insertImages(files, range),
+				mimetypes: ['image/png', 'image/jpeg', 'image/webp', 'image/gif', 'image/heic', 'image/heif'],
+			},
+		},
+		placeholder: 'Escreva o post aqui. Use a barra para títulos, listas, links, fotos e vídeos.',
+		theme: 'snow',
+	});
+
+	if (post) {
+		quill.setContents(toEditor(post.body), 'silent');
+	}
+
+	// Os botões da barra sem nome visível ganham um, para leitores de tela.
+	for (const [selector, label] of [
+		['.ql-bold', 'Negrito'], ['.ql-italic', 'Itálico'], ['.ql-underline', 'Sublinhado'], ['.ql-strike', 'Riscado'],
+		['.ql-list[value="ordered"]', 'Lista numerada'], ['.ql-list[value="bullet"]', 'Lista com marcadores'],
+		['.ql-blockquote', 'Citação'], ['.ql-link', 'Link'], ['.ql-image', 'Foto'], ['.ql-video', 'Vídeo do YouTube'],
+		['.ql-clean', 'Tirar a formatação'],
+	]) {
+		const button = editorWrap.querySelector(`.ql-toolbar ${selector}`);
+
+		if (button) {
+			button.setAttribute('aria-label', label);
+			button.setAttribute('title', label);
+		}
+	}
+
+	function changed() {
+		dirty = true;
+
+		if (!busy) {
+			status.textContent = 'Alterações não salvas.';
+		}
+	}
+
+	const guard = (event) => {
+		if (dirty) {
+			event.preventDefault();
+			event.returnValue = '';
+		}
+	};
+
+	window.addEventListener('beforeunload', guard);
+
+	const canLeave = () => {
+		if (dirty && !window.confirm('Sair sem salvar o post?')) {
+			return false;
+		}
+
+		window.removeEventListener('beforeunload', guard);
+
+		return true;
+	};
+
+	quill.on('text-change', (delta, old, source) => {
+		if (source === 'user') {
+			changed();
+		}
+	});
+
+	for (const input of [title, category, summary]) {
+		input.addEventListener('input', changed);
+	}
+
+	async function insertImages(files, range) {
+		const list = [...files].filter((file) => file.type.startsWith('image/') || /\.(heic|heif)$/i.test(file.name));
+		let index = range ? range.index : quill.getLength() - 1;
+
+		for (const [i, file] of list.entries()) {
+			status.textContent = list.length > 1 ? `Enviando a foto ${i + 1} de ${list.length}…` : 'Enviando a foto…';
+
+			try {
+				const path = await uploadTo(folder, await shrink(file));
+
+				quill.insertEmbed(index, 'image', blogPhotoUrl(path), 'user');
+				index += 1;
+				quill.setSelection(index, 0, 'silent');
+			}
+			catch (err) {
+				status.textContent = err.message || String(err);
+
+				return;
+			}
+		}
+
+		status.textContent = dirty ? 'Alterações não salvas.' : '';
+	}
+
+	imageFiles.addEventListener('change', () => {
+		const files = [...imageFiles.files];
+
+		imageFiles.value = '';
+		insertImages(files, quill.getSelection(true));
+	});
+
+	function insertVideo() {
+		const videoId = youtubeId(videoInput.value);
+
+		if (!videoId) {
+			status.textContent = 'Esse link não é de um vídeo do YouTube.';
+			videoInput.focus();
+
+			return;
+		}
+
+		const index = videoRange ? videoRange.index : quill.getLength() - 1;
+
+		quill.insertEmbed(index, 'video', `${YT_EMBED}${videoId}`, 'user');
+		quill.setSelection(index + 1, 0, 'silent');
+		videoPanel.hidden = true;
+		status.textContent = 'Alterações não salvas.';
+	}
+
+	videoInput.addEventListener('keydown', (event) => {
+		if (event.key === 'Enter') {
+			event.preventDefault();
+			insertVideo();
+		}
+	});
+
+	videoPanel.append(
+		el('label', {class: 'admin-hint', for: 'admin-video-link'}, 'O vídeo entra onde o cursor estava. Serve o link do vídeo, de um Short ou o youtu.be.'),
+		videoInput,
+		el('div', {class: 'admin-actions'},
+			el('button', {class: 'btn btn-gold', id: 'admin-video-insert', onclick: insertVideo, type: 'button'}, 'Inserir vídeo'),
+			el('button', {class: 'btn btn-navy', onclick: () => {
+				videoPanel.hidden = true;
+				quill.focus();
+			}, type: 'button'}, 'Cancelar')
+		)
+	);
+
+	function drawCover() {
+		const src = !cover ? null : typeof cover === 'string' ? blogPhotoUrl(cover) : cover.url;
+
+		coverBox.replaceChildren(...(src
+			? [el('figure', {class: 'admin-photo admin-cover'},
+				el('img', {alt: 'Capa do post', src}),
+				el('figcaption', null, el('button', {class: 'admin-link', onclick: () => {
+					cover = null;
+					changed();
+					drawCover();
+				}, type: 'button'}, 'Tirar a capa')))]
+			: []));
+	}
+
+	coverFile.addEventListener('change', () => {
+		const [file] = coverFile.files;
+
+		coverFile.value = '';
+
+		if (file) {
+			cover = {file, url: URL.createObjectURL(file)};
+			changed();
+			drawCover();
+		}
+	});
+
+	async function showPreview() {
+		if (!preview.hidden) {
+			preview.hidden = true;
+
+			return;
+		}
+
+		const {body} = await fromEditor(quill.getContents(), folder, {upload: false});
+
+		preview.replaceChildren(
+			el('p', {class: 'admin-hint'}, 'Prévia: assim o post aparece no site. Uma foto colada só aparece depois de salvar.'),
+			postPreview({
+				body,
+				category: category.value.trim(),
+				cover: !cover ? null : typeof cover === 'string' ? blogPhotoUrl(cover) : cover.url,
+				date: saved && saved.status === 'published' ? postDate(saved.published_at) : 'Rascunho',
+				title: title.value.trim(),
+			})
+		);
+		preview.hidden = false;
+		preview.scrollIntoView({behavior: 'smooth', block: 'start'});
+	}
+
+	async function save(nextStatus) {
+		if (busy) {
+			return;
+		}
+
+		if (!title.value.trim()) {
+			status.textContent = 'Escreva o título do post.';
+			title.focus();
+
+			return;
+		}
+
+		busy = true;
+		drawButtons();
+
+		try {
+			let coverPath = typeof cover === 'string' ? cover : null;
+
+			if (cover && typeof cover !== 'string') {
+				status.textContent = 'Enviando a capa…';
+				coverPath = await uploadTo(folder, await shrink(cover.file));
+				cover = coverPath;
+			}
+
+			status.textContent = 'Salvando…';
+
+			const {body, removed} = await fromEditor(quill.getContents(), folder);
+			const {data, error} = await client.rpc('save_post', {post: {
+				body,
+				category: category.value.trim() || null,
+				cover: coverPath,
+				excerpt: plainText(body) || null,
+				id,
+				status: nextStatus,
+				summary: summary.value.trim() || null,
+				title: title.value.trim(),
+			}});
+
+			if (error) {
+				throw new Error(error.message);
+			}
+
+			saved = data;
+			dirty = false;
+			quill.setContents(toEditor(data.body), 'silent');
+			drawCover();
+
+			const time = new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'});
+			const parts = [data.status === 'published' ? `Publicado às ${time}.` : `Rascunho salvo às ${time}. Só você vê.`];
+
+			if (removed) {
+				parts.push(removed === 1
+					? '1 foto ou vídeo de outro site saiu do texto: use os botões de foto e de vídeo.'
+					: `${removed} fotos ou vídeos de outros sites saíram do texto: use os botões de foto e de vídeo.`);
+			}
+
+			status.replaceChildren(parts.join(' '), data.status === 'published' ? ' ' : '', data.status === 'published'
+				? el('a', {href: `post.html?p=${encodeURIComponent(data.slug)}`, rel: 'noopener', target: '_blank'}, 'Ver no site')
+				: '');
+		}
+		catch (err) {
+			status.textContent = `Não foi salvo. ${err.message || err}`;
+		}
+
+		busy = false;
+		drawButtons();
+	}
+
+	function drawButtons() {
+		const published = saved && saved.status === 'published';
+		const button = (label, cls, idName, onclick) => el('button', {class: `btn ${cls}`, disabled: busy, id: idName, onclick, type: 'button'}, label);
+
+		buttons.replaceChildren(
+			published
+				? button('Salvar', 'btn-gold', 'admin-post-save', () => save('published'))
+				: button('Publicar', 'btn-gold', 'admin-post-publish', () => save('published')),
+			published
+				? button('Voltar para rascunho', 'btn-navy', 'admin-post-unpublish', () => save('draft'))
+				: button('Salvar rascunho', 'btn-navy', 'admin-post-draft', () => save('draft')),
+			button(preview.hidden ? 'Prévia' : 'Fechar prévia', 'btn-navy', 'admin-post-preview', async () => {
+				await showPreview();
+				drawButtons();
+			}),
+			el('button', {class: 'admin-link', id: 'admin-post-back', onclick: () => {
+				if (canLeave()) {
+					onBack();
+				}
+			}, type: 'button'}, 'Voltar para a lista'),
+			status
+		);
+	}
+
+	drawCover();
+	drawButtons();
+
+	const form = el('form', {class: 'admin-form admin-post-form', id: 'admin-post-form', novalidate: true, onsubmit: (event) => event.preventDefault()},
+		el('h2', null, post ? 'Editar post' : 'Novo post'),
+		el('label', {for: 'admin-post-title'}, 'Título'), title,
+		el('label', {for: 'admin-post-category'}, 'Categoria'), category, categoryList,
+		el('p', {class: 'admin-hint'}, 'Escolha uma da lista ou escreva uma nova. O blog filtra os posts por categoria.'),
+		el('label', {for: 'admin-post-cover'}, 'Capa (opcional)'), coverBox, coverFile,
+		el('label', {for: 'admin-post-summary'}, 'Resumo (opcional)'), summary,
+		el('p', {class: 'admin-hint'}, 'Aparece na lista do blog. Sem resumo, a lista mostra o começo do texto.'),
+		el('label', {onclick: () => quill.focus()}, 'Texto'),
+		editorWrap, videoPanel, imageFiles,
+		buttons,
+		preview
+	);
+
+	return {canLeave, form};
+}
+
+function postRow(post, {onEdit}) {
+	const cover = blogPhotoUrl(post.cover);
+	const published = post.status === 'published';
+
+	return el('li', {class: `admin-product${published ? '' : ' admin-inactive'}`, id: `admin-post-${post.id}`},
+		cover ? el('img', {alt: '', class: 'admin-thumb', loading: 'lazy', src: cover}) : el('span', {'aria-hidden': 'true', class: 'admin-thumb admin-thumb-none'}),
+		el('div', {class: 'admin-product-body'},
+			el('p', {class: 'admin-product-name'}, post.title),
+			el('p', {class: 'admin-product-meta'}, [published ? `Publicado em ${postDate(post.published_at)}` : 'Rascunho', post.category].filter(Boolean).join(' · ')),
+			published ? el('p', {class: 'admin-product-counts'}, el('a', {href: `post.html?p=${encodeURIComponent(post.slug)}`, rel: 'noopener', target: '_blank'}, 'Ver no site')) : ''
+		),
+		el('button', {class: 'btn btn-navy admin-edit', onclick: () => onEdit(post), type: 'button'}, 'Editar')
+	);
+}
+
+async function showPosts(notice = '') {
+	root.replaceChildren(tabs('blog'), message('Carregando os posts…'));
+
+	const {data, error} = await client.rpc('store_posts_admin');
+
+	if (error) {
+		root.replaceChildren(tabs('blog'), message(error.code === '42501'
+			? 'Esta conta não é a dona da loja. Entre no card tracker com a conta do Eric.'
+			: error.code === 'PGRST202'
+				? 'O blog ainda não existe no banco: rode supabase/store-blog.sql no Supabase.'
+				: `Não foi possível ler os posts. ${error.message}`));
+
+		return;
+	}
+
+	const posts = Array.isArray(data) ? data : [];
+	const categories = [...new Set([...BLOG_CATEGORIES, ...posts.map((post) => post.category).filter(Boolean)])];
+
+	const edit = (post) => {
+		if (typeof window.Quill !== 'function') {
+			root.replaceChildren(tabs('blog'), message('O editor não carregou. Recarregue a página.'));
+
+			return;
+		}
+
+		const {canLeave, form} = postForm(post, {categories, onBack: () => showPosts()});
+
+		root.replaceChildren(tabs('blog', canLeave), form);
+		window.scrollTo(0, 0);
+	};
+
+	root.replaceChildren(
+		tabs('blog'),
+		notice ? message(notice, 'admin-done') : '',
+		el('div', {class: 'admin-head'},
+			el('h2', null, posts.length ? `Blog (${posts.length})` : 'Blog'),
+			el('button', {class: 'btn btn-gold', id: 'admin-new-post', onclick: () => edit(null), type: 'button'}, 'Novo post')
+		),
+		posts.length
+			? el('ul', {class: 'admin-list'}, posts.map((post) => postRow(post, {onEdit: edit})))
+			: message('Nenhum post ainda. Escreva o primeiro com Novo post.')
+	);
 }
 
 async function start() {
