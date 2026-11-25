@@ -1307,3 +1307,100 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .carousel-dot::before { transition: none; }
 }
+
+/* O blog (blog.html, post.html, a faixa da home; assets/blog.js) e a aba
+   Blog da administração. */
+.blog-home { background: var(--ivory); }
+.post-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
+.post-card { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid rgba(14, 31, 71, 0.1); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); transition: box-shadow .2s ease, transform .2s ease; }
+.post-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
+.post-card-cover { position: relative; display: block; aspect-ratio: 16 / 9; background: linear-gradient(160deg, #18335f 0%, var(--navy) 45%, var(--navy-deep) 100%); }
+.post-card-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Sem capa, o vaga-lume no meio, sem mudar a altura do cartão. */
+.post-card-nocover .post-card-mark { position: absolute; inset: 0; margin: auto; width: auto; height: 58%; object-fit: contain; filter: drop-shadow(0 0 14px var(--lime-glow)); }
+.post-card-body { padding: 16px 18px 20px; display: grid; gap: 6px; }
+.post-card-body .eyebrow { margin: 0; }
+.post-card-body h3 { margin: 0; font-size: 1.2rem; line-height: 1.3; }
+.post-card-link { color: inherit; text-decoration: none; }
+/* O cartão inteiro abre o post. */
+.post-card-link::after { content: ""; position: absolute; inset: 0; }
+.post-card-link:focus-visible { outline: none; }
+.post-card:focus-within { outline: 2px solid var(--gold); outline-offset: 2px; }
+.post-date { margin: 0; font-size: 0.8rem; color: var(--ink-soft); }
+.post-excerpt { margin: 4px 0 0; font-size: 0.9rem; color: var(--ink-soft); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.post-chips a { text-decoration: none; }
+.post-chips a[aria-current="page"] { background: var(--navy); border-color: var(--navy); color: var(--ivory); }
+
+.post-pagehead { padding-bottom: 18px; }
+.post { max-width: 46rem; margin: 0 auto; }
+.post-head { margin: 0 0 22px; }
+.post-head h1 { font-size: clamp(1.9rem, 4.4vw, 2.7rem); line-height: 1.15; margin: 6px 0 10px; overflow-wrap: anywhere; }
+.post-category { text-decoration: none; display: inline-block; }
+.post-cover { width: 100%; max-height: 30rem; object-fit: cover; border-radius: 14px; display: block; margin: 0 0 28px; box-shadow: var(--shadow-sm); }
+.post-body { font-size: 1.04rem; line-height: 1.8; overflow-wrap: anywhere; }
+.post-body > * { margin: 0 0 1.05em; }
+.post-body h2 { font-size: 1.6rem; line-height: 1.25; margin: 1.6em 0 0.5em; }
+.post-body h3 { font-size: 1.25rem; line-height: 1.3; margin: 1.4em 0 0.4em; }
+.post-body ul, .post-body ol { padding-left: 1.4em; }
+.post-body li + li { margin-top: 4px; }
+.post-body blockquote { border-left: 3px solid var(--gold); padding: 4px 0 4px 18px; color: var(--ink-soft); font-style: italic; }
+.post-body a { color: var(--gold-dk); }
+.post-body strong { color: var(--ink); }
+.post-body .post-photo { max-width: 100%; height: auto; border-radius: 10px; vertical-align: middle; }
+.post-body .post-figure { text-align: center; }
+.post-body .post-figure .post-photo + .post-photo { margin-top: 12px; }
+.post-body .post-video { margin: 1.4em 0; }
+.post-back { margin: 40px 0 0; }
+
+/* A aba Blog: o editor (Quill) com as cores e os textos do site. */
+.admin-post-form { max-width: 48rem; }
+.admin-editor-wrap { background: #fff; border-radius: 10px; }
+.admin-editor-wrap .ql-toolbar.ql-snow { border-radius: 10px 10px 0 0; border-color: rgba(14, 31, 71, 0.2); position: sticky; top: 0; z-index: 2; background: #fff; }
+.admin-editor-wrap .ql-container.ql-snow { border-radius: 0 0 10px 10px; border-color: rgba(14, 31, 71, 0.2); font: 1rem/1.7 var(--sans); }
+.admin-editor .ql-editor { min-height: 22rem; }
+.admin-editor .ql-editor h2, .admin-editor .ql-editor h3 { font-family: var(--serif); }
+.admin-editor .ql-editor img { max-width: 100%; border-radius: 8px; }
+.admin-editor .ql-editor .ql-video { width: 100%; aspect-ratio: 16 / 9; height: auto; border-radius: 8px; }
+.admin-editor .ql-editor.ql-blank::before { color: var(--ink-soft); font-style: normal; }
+.admin-editor-wrap .ql-snow .ql-picker.ql-header .ql-picker-label::before,
+.admin-editor-wrap .ql-snow .ql-picker.ql-header .ql-picker-item::before { content: "Texto"; }
+.admin-editor-wrap .ql-snow .ql-picker.ql-header .ql-picker-label[data-value="2"]::before,
+.admin-editor-wrap .ql-snow .ql-picker.ql-header .ql-picker-item[data-value="2"]::before { content: "Título"; }
+.admin-editor-wrap .ql-snow .ql-picker.ql-header .ql-picker-label[data-value="3"]::before,
+.admin-editor-wrap .ql-snow .ql-picker.ql-header .ql-picker-item[data-value="3"]::before { content: "Subtítulo"; }
+.admin-editor-wrap .ql-snow .ql-tooltip::before { content: "Abrir o link:"; }
+.admin-editor-wrap .ql-snow .ql-tooltip[data-mode="link"]::before { content: "Link:"; }
+.admin-editor-wrap .ql-snow .ql-tooltip a.ql-action::after { content: "Editar"; }
+.admin-editor-wrap .ql-snow .ql-tooltip a.ql-remove::before { content: "Tirar"; }
+.admin-editor-wrap .ql-snow .ql-tooltip.ql-editing a.ql-action::after { content: "Salvar"; }
+.admin-editor-wrap .ql-snow .ql-tooltip { z-index: 3; }
+.admin-text-head { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 6px; }
+.admin-text-head label { margin: 0; }
+.admin-mode { display: inline-flex; gap: 6px; }
+.admin-mode .btn { padding: 8px 14px; font-size: 11px; }
+.admin-mode .btn[aria-pressed="true"] { outline: 2px solid var(--gold); outline-offset: 2px; }
+.admin-text-head .admin-link { font-size: 0.85rem; }
+.admin-markdown-pane { display: grid; gap: 10px; }
+.admin-markdown-pane[hidden], .admin-editor-wrap[hidden] { display: none; }
+.admin-markdown { width: 100%; min-height: 22rem; padding: 14px; border-radius: 10px; border: 1px solid rgba(14, 31, 71, 0.2); background: #fff; color: var(--ink); font: 0.92rem/1.6 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; resize: vertical; tab-size: 2; }
+.admin-markdown:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.admin-editor-hint { margin-top: 2px; }
+.admin-video { display: grid; gap: 8px; padding: 12px; background: #fff; border: 1px solid var(--gold); border-radius: 10px; }
+.admin-video[hidden] { display: none; }
+.admin-post-form .admin-save-bar .admin-status { flex-basis: 100%; }
+.admin-post-form .admin-save-bar .admin-link { font-size: 0.85rem; }
+.admin-preview-box { margin-top: 18px; padding: 22px; background: var(--page); border: 1px dashed var(--gold); border-radius: 14px; }
+.admin-preview-box[hidden] { display: none; }
+.admin-post-cover { max-width: 16rem; grid-template-columns: 1fr; }
+.admin-post-cover .admin-photo img { aspect-ratio: 16 / 9; }
+
+@media (max-width: 1000px) {
+  .post-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 600px) {
+  .post-grid { grid-template-columns: 1fr; gap: 16px; }
+  .post-body { font-size: 1rem; }
+  .admin-preview-box { padding: 14px; }
+  .admin-editor .ql-editor { min-height: 16rem; }
+  .admin-markdown { min-height: 16rem; font-size: 0.86rem; }
+}
