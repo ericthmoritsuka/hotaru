@@ -476,8 +476,9 @@ page("post", "Blog — HOTARU", post, "blog.html")
 print("post.html")
 
 # A administração dos selados, dos destaques e do blog: só para o Eric, sem
-# link no site, fora dos buscadores. O login é o do card tracker
-# (assets/admin.js). O editor do blog (Quill) só carrega aqui.
+# link no site, fora dos buscadores. O login é por link no e-mail, com a
+# conta do card tracker (assets/admin.js). O editor do blog (Quill) só
+# carrega aqui.
 ADMIN_V = hashlib.sha256((ROOT / "assets/admin.js").read_bytes() + (ROOT / "assets/blog-render.js").read_bytes()).hexdigest()[:10]
 admin = f'''
 <div class="pagehead">
