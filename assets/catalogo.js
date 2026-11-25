@@ -14,6 +14,8 @@
 //   order   pedido.html, o carrinho, o pedido e o Pix
 //   sealed, sealedone, homesealed  selados.html, selado.html?id=<produto> e
 //           a seção de selados da home (etapa 4), lidos de store_sealed
+//   homekits, kits, kit  a seção Kits da home, os kits no alto de
+//           avulsas.html e kit.html?id=<kit>, lidos de store_bundles
 // Toda página carrega o script, para o link Carrinho do cabeçalho mostrar
 // quantas cartas há nele.
 //
@@ -287,9 +289,15 @@
 		drawCartCount(items);
 	}
 
+	// As cópias que o carrinho leva: as avulsas e as de cada kit.
+	const cartIds = (items = readCart()) => new Set(items.flatMap((item) => (item.kind === 'kit' ? item.ids || [] : [item.id])));
+
+	// Quantas cartas o carrinho leva: um kit conta as suas.
+	const cardCount = (items) => items.reduce((n, item) => n + (item.kind === 'kit' ? (item.ids || []).length : 1), 0);
+
 	function drawCartCount(items = readCart()) {
 		for (const node of document.querySelectorAll('[data-cart-count]')) {
-			node.textContent = String(items.length);
+			node.textContent = String(cardCount(items));
 			node.hidden = !items.length;
 		}
 
@@ -298,7 +306,7 @@
 		}
 
 		for (const link of document.querySelectorAll('.cart-link')) {
-			link.setAttribute('aria-label', items.length === 1 ? 'Carrinho, 1 carta' : `Carrinho, ${items.length} cartas`);
+			link.setAttribute('aria-label', cardCount(items) === 1 ? 'Carrinho, 1 carta' : `Carrinho, ${cardCount(items)} cartas`);
 		}
 	}
 
@@ -360,6 +368,12 @@
 
 		}
 
+		// Uma carta avulsa sai primeiro de uma cópia que não está num kit
+		// (Eric, 2026-11-25), para o kit continuar inteiro.
+		for (const group of groups.values()) {
+			group.copies.sort((a, b) => Number(Boolean(a.in_kit)) - Number(Boolean(b.in_kit)));
+		}
+
 		return [...groups.values()];
 	}
 
@@ -408,7 +422,7 @@
 		const button = el('button', {class: 'quick-add', type: 'button'});
 
 		function draw() {
-			const inCart = new Set(readCart().map((item) => item.id));
+			const inCart = cartIds();
 			const free = group.copies.filter((row) => !inCart.has(row.id));
 			const there = group.copies.length - free.length;
 
@@ -419,14 +433,14 @@
 		}
 
 		button.addEventListener('click', () => {
-			const inCart = new Set(readCart().map((item) => item.id));
+			const inCart = cartIds();
 			const next = group.copies.find((row) => !inCart.has(row.id));
 
 			if (!next) {
 				return;
 			}
 
-			if (readCart().length >= MAX_ORDER) {
+			if (cardCount(readCart()) >= MAX_ORDER) {
 				button.textContent = `Até ${MAX_ORDER} cartas`;
 
 				return;
@@ -685,7 +699,7 @@
 		const box = el('div', {class: 'buy-box'});
 
 		function draw() {
-			const inCart = new Set(readCart().map((item) => item.id));
+			const inCart = cartIds();
 			const variants = new Map();
 
 			for (const row of group.copies) {
@@ -712,7 +726,7 @@
 					const n = Number(qty.value) || 1;
 					const cart = readCart();
 
-					if (cart.length + n > MAX_ORDER) {
+					if (cardCount(cart) + n > MAX_ORDER) {
 						status.textContent = `Um pedido leva até ${MAX_ORDER} cartas.`;
 
 						return;
@@ -799,6 +813,10 @@
 	const NOTICES = {
 		gone: ['Não está mais disponível.', 'Esta carta foi vendida ou saiu do catálogo.'],
 		reserved: ['Temporariamente indisponível.', 'Outra pessoa fechou um pedido com esta carta. Se a compra não for concluída, ela volta ao catálogo.'],
+	};
+	const KIT_NOTICES = {
+		gone: ['Kit indisponível.', 'Uma carta do kit foi vendida, ou o kit saiu do catálogo.'],
+		reserved: ['Kit temporariamente indisponível.', 'Outra pessoa fechou um pedido com uma carta do kit. Se a compra não for concluída, o kit volta ao catálogo.'],
 	};
 
 	// Meus pedidos: os pedidos feitos neste navegador, mais novos primeiro,
@@ -1010,7 +1028,9 @@
 		);
 	}
 
-	const itemText = (item) => `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`;
+	const itemText = (item) => (item.kind === 'kit' ? `Kit ${item.name} (${kitCards(item.items.length)}: ${item.items.map((one) => one.name).join(', ')}) · ${brl(item.price)}` : singleText(item));
+
+	const singleText = (item) => `${item.name} (${[item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language)].filter(Boolean).join(', ')}) · ${brl(item.price)}`;
 
 	// O pedido fechado: o código, o total, o prazo e o Pix.
 	function confirmation(order) {
@@ -1029,6 +1049,60 @@
 				el('a', {class: 'order-mine', href: 'meus-pedidos.html'}, 'Meus pedidos')
 			)
 		);
+	}
+
+	// O estado de cada linha do carrinho: o de cada carta avulsa
+	// (listing_status), e o de um kit: disponível enquanto store_bundles o
+	// mostra, senão reservado ou indisponível conforme as cartas dele. Um kit
+	// à venda com outro preço ou outras cópias (o Eric trocou uma cópia
+	// vendida) fica como está agora, e uma avulsa que passou a vir nele sai
+	// do carrinho.
+	async function cartStatuses(cart) {
+		const ids = [...cartIds(cart)];
+		const hasKits = cart.some((item) => item.kind === 'kit');
+		const [raw, kits] = await Promise.all([rpc('listing_status', {ids}), hasKits ? readKits() : []]);
+		const states = raw || {};
+		const live = new Map(kits.map((kit) => [kit.id, kit]));
+		const out = {};
+		let changed = false;
+		let next = cart.map((item) => {
+			if (item.kind !== 'kit') {
+				out[item.id] = states[item.id];
+
+				return item;
+			}
+
+			const kit = live.get(item.id);
+
+			if (kit) {
+				const fresh = kitItem(kit);
+
+				out[item.id] = 'available';
+
+				if (fresh.price !== item.price || fresh.ids.join() !== (item.ids || []).join()) {
+					changed = true;
+
+					return fresh;
+				}
+
+				return item;
+			}
+
+			const mine = (item.ids || []).map((id) => states[id]);
+
+			out[item.id] = mine.includes('reserved') && !mine.includes('gone') ? 'reserved' : 'gone';
+
+			return item;
+		});
+
+		if (changed) {
+			const inKits = new Set(next.filter((item) => item.kind === 'kit').flatMap((item) => item.ids));
+
+			next = next.filter((item) => item.kind === 'kit' || !inKits.has(item.id));
+			writeCart(next);
+		}
+
+		return out;
 	}
 
 	function order(root) {
@@ -1096,10 +1170,12 @@
 				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
 					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
 					el('div', {class: 'cart-body'},
-						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
-						el('p', {class: 'cart-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
-						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, NOTICES[status][0]), ` ${NOTICES[status][1]}`) : null,
-						el('p', {class: 'cart-price'}, brl(item.price))
+						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
+						el('p', {class: 'cart-meta'}, item.kind === 'kit'
+							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
+							: [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
+						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
+						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
 					el('button', {'aria-label': `Remover ${item.name}`, class: 'cart-remove', onclick: () => remove(item.id), type: 'button'}, 'Remover')
 				);
@@ -1109,9 +1185,9 @@
 			const total = free.reduce((sum, item) => sum + item.price, 0);
 			const checked = cart.every((item) => statuses[item.id]);
 
-			totalLine.textContent = free.length ? `Total: ${brl(total)} (${free.length === 1 ? '1 carta' : `${free.length} cartas`})` : '';
+			totalLine.textContent = free.length ? `Total: ${brl(total)} (${kitCards(cardCount(free))})` : '';
 			noticeLine.textContent = notice;
-			submit.textContent = free.length ? `Fechar pedido com ${free.length === 1 ? '1 carta' : `${free.length} cartas`}` : 'Fechar pedido';
+			submit.textContent = free.length ? `Fechar pedido com ${kitCards(cardCount(free))}` : 'Fechar pedido';
 			submit.disabled = busy || !checked || !free.length;
 
 			if (!root.contains(form)) {
@@ -1145,7 +1221,7 @@
 			}
 
 			try {
-				statuses = await rpc('listing_status', {ids: cart.map((item) => item.id)}) || {};
+				statuses = await cartStatuses(cart);
 
 				if (notice === OFFLINE) {
 					notice = '';
@@ -1200,7 +1276,13 @@
 			let result;
 
 			try {
-				result = await rpc('place_order', {buyer_name: name, buyer_note: noteInput.value.trim() || null, buyer_phone: phone, items: items.map((item) => item.id)});
+				result = await rpc('place_order', {
+					buyer_name: name,
+					buyer_note: noteInput.value.trim() || null,
+					buyer_phone: phone,
+					items: items.filter((item) => item.kind !== 'kit').map((item) => item.id),
+					...(items.some((item) => item.kind === 'kit') ? {bundles: items.filter((item) => item.kind === 'kit').map((item) => item.id)} : {}),
+				});
 			}
 			catch (err) {
 				busy = false;
@@ -1210,7 +1292,7 @@
 				return;
 			}
 
-			if (result && Array.isArray(result.unavailable)) {
+			if (result && (Array.isArray(result.unavailable) || Array.isArray(result.unavailable_kits))) {
 				busy = false;
 				notice = 'Alguém fechou um pedido com uma das suas cartas antes de você. Confira o carrinho e feche de novo com as que sobraram.';
 				await check();
@@ -1260,13 +1342,45 @@
 	const fromServer = (row) => ({
 		code: row.code,
 		createdAt: row.created_at,
-		items: (row.items || []).map((item) => ({imagePath: item.image_path, language: item.language, name: item.name, number: item.number, price: Number(item.price_brl), setName: item.set_name})),
+		items: orderLines(row.items || []),
 		receiptSent: Boolean(row.receipt_at),
 		receiptToken: row.token,
 		reservedUntil: row.reserved_until,
 		status: row.status === 'paid' && row.delivered_at ? 'delivered' : row.status,
 		total: Number(row.total),
 	});
+
+	// As linhas de um pedido do servidor: as avulsas, e cada kit numa linha
+	// só, com o preço que o servidor dividiu entre as cartas dele.
+	function orderLines(items) {
+		const lines = [];
+		const kits = new Map();
+
+		for (const item of items) {
+			const line = {imagePath: item.image_path, language: item.language, name: item.name, number: item.number, price: Number(item.price_brl), setName: item.set_name};
+
+			if (!item.bundle_id && !item.bundle_name) {
+				lines.push(line);
+				continue;
+			}
+
+			const key = item.bundle_id || item.bundle_name;
+
+			if (!kits.has(key)) {
+				const kit = {items: [], kind: 'kit', name: item.bundle_name || 'Kit', price: 0};
+
+				kits.set(key, kit);
+				lines.push(kit);
+			}
+
+			const kit = kits.get(key);
+
+			kit.items.push(line);
+			kit.price = Math.round((kit.price + line.price) * 100) / 100;
+		}
+
+		return lines;
+	}
 
 	function mineCard(order) {
 		const open = order.status === 'pending' && Date.parse(order.reservedUntil) > Date.now();
@@ -1391,7 +1505,7 @@
 		};
 
 		function draw() {
-			const inCart = new Set(readCart().map((item) => item.id));
+			const inCart = cartIds();
 			const free = product.units.filter((unit) => !inCart.has(unit));
 			const there = product.units.length - free.length;
 
@@ -1402,10 +1516,10 @@
 		}
 
 		button.addEventListener('click', () => {
-			const inCart = new Set(readCart().map((item) => item.id));
+			const inCart = cartIds();
 			const unit = product.units.find((one) => !inCart.has(one));
 
-			if (!unit || readCart().length >= MAX_ORDER) {
+			if (!unit || cardCount(readCart()) >= MAX_ORDER) {
 				return;
 			}
 
@@ -1481,14 +1595,14 @@
 		const box = el('div', {class: 'buy-box'});
 
 		function drawBuy() {
-			const inCart = new Set(readCart().map((item) => item.id));
+			const inCart = cartIds();
 			const free = product.units.filter((unit) => !inCart.has(unit));
 			const qty = el('select', {'aria-label': 'Quantidade', class: 'buy-qty'}, free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
 			const add = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
 				const n = Number(qty.value) || 1;
 				const cart = readCart();
 
-				if (cart.length + n > MAX_ORDER) {
+				if (cardCount(cart) + n > MAX_ORDER) {
 					status.textContent = `Um pedido leva até ${MAX_ORDER} itens.`;
 
 					return;
@@ -1556,6 +1670,281 @@
 		}
 	}
 
+	// ------------------------------------------------------------ kits
+
+	// Os kits (Eric, 2026-11-25; plano em pokemon-card-tracker,
+	// plans/hotaru-bundles-plan.md): várias cartas vendidas juntas por um
+	// preço que não é a soma, como o trio de iniciais. O Eric monta o kit na
+	// tela Shop do card tracker; store_bundles devolve só os kits com todas
+	// as cartas disponíveis, cada um com o preço que o servidor calcula. As
+	// cartas do kit continuam à venda uma a uma: quem fechar o pedido
+	// primeiro leva, e o kit some enquanto uma delas estiver reservada.
+
+	async function readKits() {
+		const rows = await rpc('store_bundles');
+
+		return (Array.isArray(rows) ? rows : []).map((kit) => ({
+			description: kit.description || null,
+			discount: kit.discount_pct === null || kit.discount_pct === undefined ? null : Number(kit.discount_pct),
+			id: String(kit.id),
+			items: (kit.items || []).map((item) => ({
+				cardId: item.card_id,
+				condition: item.condition || null,
+				finish: item.finish ? finishName(item.finish) : null,
+				id: item.listing_id,
+				imagePath: item.image_path || null,
+				language: item.language || '',
+				name: item.name,
+				number: item.number || null,
+				price: Number(item.price_brl),
+				setName: item.set_name || null,
+			})),
+			name: kit.name,
+			price: Number(kit.price),
+			sum: Number(kit.sum),
+		}));
+	}
+
+	const kitHref = (kit) => `kit.html?id=${encodeURIComponent(kit.id)}`;
+
+	// O desconto do kit em porcentagem: o que o Eric escolheu, ou, num kit de
+	// preço digitado, o quanto ele sai abaixo da soma, arredondado para baixo.
+	function kitOff(kit) {
+		if (kit.discount) {
+			return kit.discount;
+		}
+
+		const sum = Math.round(kit.sum * 100);
+		const price = Math.round(kit.price * 100);
+
+		return price < sum ? Math.floor((sum - price) * 100 / sum) : null;
+	}
+
+	const offText = (n) => `-${String(n).replace('.', ',')}%`;
+
+	const kitCards = (n) => (n === 1 ? '1 carta' : `${n} cartas`);
+
+	// O kit no carrinho: uma linha só, com as cópias que ele leva.
+	const kitItem = (kit) => ({
+		id: kit.id,
+		ids: kit.items.map((item) => item.id),
+		imagePath: (kit.items.find((item) => item.imagePath) || {}).imagePath || null,
+		items: kit.items.map(({condition, finish, language, name, number, setName}) => ({condition, finish, language, name, number, setName})),
+		kind: 'kit',
+		name: kit.name,
+		price: kit.price,
+		sum: kit.sum,
+	});
+
+	// As cartas do kit em leque: até três fotos, e +N quando há mais.
+	function kitShot(kit, {link = true} = {}) {
+		const shown = kit.items.slice(0, 3);
+		const fan = el('span', {class: `kit-fan kit-fan-${shown.length}`}, shown.map((item) => {
+			const url = pictureUrl(item.imagePath);
+
+			return url
+				? el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+				: el('span', {class: 'card-pic card-pic-none'}, item.name);
+		}));
+		const off = kitOff(kit);
+		const parts = [
+			off ? el('span', {class: 'tag kit-tag'}, offText(off)) : null,
+			fan,
+			kit.items.length > 3 ? el('span', {class: 'kit-more'}, `+${kit.items.length - 3}`) : null,
+		];
+		const label = {'aria-label': `${kit.name}: ${kit.items.map((item) => item.name).join(', ')}`, role: 'img'};
+
+		return link
+			? el('a', {class: 'shot card-shot kit-shot', href: kitHref(kit), tabindex: '-1', 'aria-hidden': 'true'}, ...parts)
+			: el('div', {class: 'shot card-shot kit-shot', ...label}, ...parts);
+	}
+
+	// Põe o kit no carrinho. As mesmas cópias, já no carrinho como avulsas,
+	// saem dele, para o pedido não levar uma cópia duas vezes. Devolve
+	// quantas saíram, ou null quando o kit não coube.
+	function addKit(kit) {
+		const ids = new Set(kit.items.map((item) => item.id));
+		const rest = readCart().filter((item) => item.id !== kit.id && !(item.kind !== 'kit' && ids.has(item.id)));
+		const removed = readCart().length - rest.length;
+
+		if (cardCount(rest) + ids.size > MAX_ORDER) {
+			return null;
+		}
+
+		writeCart([...rest, kitItem(kit)]);
+
+		return removed;
+	}
+
+	// Uma cópia do kit já está no carrinho em outro kit: este kit não entra.
+	const kitClash = (kit) => readCart().some((item) => item.kind === 'kit' && item.id !== kit.id && item.ids.some((id) => kit.items.some((one) => one.id === id)));
+
+	function kitAdd(kit, status = null) {
+		const icon = () => {
+			const span = el('span', {'aria-hidden': 'true', class: 'quick-icon'});
+
+			span.innerHTML = '<svg width="16" height="16"><use href="#i-cart"/></svg>';
+
+			return span;
+		};
+		const button = el('button', {class: status ? 'btn btn-gold buy-add' : 'quick-add', type: 'button'});
+
+		function draw() {
+			const there = readCart().some((item) => item.id === kit.id);
+
+			button.disabled = there || kitClash(kit);
+			button.classList.toggle('quick-in', there);
+			button.setAttribute('aria-label', there ? `${kit.name}: no carrinho` : `Adicionar ${kit.name} ao carrinho`);
+			button.replaceChildren(...(status ? [] : [icon()]), there ? 'No carrinho' : (status ? 'Adicionar o kit ao carrinho' : 'Adicionar'));
+		}
+
+		button.addEventListener('click', () => {
+			const removed = addKit(kit);
+
+			if (removed === null) {
+				button.textContent = `Até ${MAX_ORDER} cartas`;
+
+				return;
+			}
+
+			draw();
+
+			if (status) {
+				status.replaceChildren(removed ? `Kit adicionado. ${removed === 1 ? 'A carta avulsa igual saiu' : `As ${removed} cartas avulsas iguais saíram`} do carrinho, porque já vêm no kit. ` : 'Kit adicionado ao carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+			}
+		});
+		draw();
+
+		return button;
+	}
+
+	// O preço do kit e, riscada, a soma das cartas separadas; o desconto em
+	// porcentagem fica na etiqueta da foto.
+	function kitPrice(kit) {
+		return el('div', {class: 'price kit-price'},
+			el('strong', null, brl(kit.price)),
+			kit.sum > kit.price ? el('s', {'aria-label': `separadas, ${brl(kit.sum)}`}, brl(kit.sum)) : null);
+	}
+
+	function kitTile(kit) {
+		return el('article', {class: 'product card-item kit-item'},
+			kitShot(kit),
+			el('div', {class: 'meta'},
+				el('span', {class: 'kind'}, `Kit · ${kitCards(kit.items.length)}`),
+				el('h3', null, el('a', {href: kitHref(kit)}, kit.name)),
+				el('p', {class: 'card-set'}, kit.items.map((item) => item.name).join(' · ')),
+				kitPrice(kit),
+				el('div', {class: 'card-foot'},
+					el('p', {class: 'card-count'}, 'Leve junto e pague menos'),
+					kitAdd(kit)
+				)
+			)
+		);
+	}
+
+	const kitGrid = (kits) => el('div', {class: 'products cards-grid kit-grid'}, kits.map(kitTile));
+
+	// A seção Kits da home: some quando não há kit à venda.
+	function kitsHome(root, kits) {
+		const section = root.closest('section') || root;
+
+		if (!kits.length) {
+			section.hidden = true;
+
+			return;
+		}
+
+		root.replaceChildren(kitGrid(kits.slice(0, HOME_LIMIT)));
+		section.hidden = false;
+	}
+
+	// Os kits no alto de avulsas.html, antes das cartas.
+	function kitsAll(root, kits) {
+		if (!kits.length) {
+			root.hidden = true;
+
+			return;
+		}
+
+		root.replaceChildren(
+			el('div', {class: 'section-head kits-head'},
+				el('div', null,
+					el('p', {class: 'eyebrow'}, 'Kits'),
+					el('h2', null, kits.length === 1 ? 'Um kit à venda' : `${kits.length} kits à venda`),
+					el('p', null, 'Cartas que saem juntas por menos do que separadas.'))),
+			kitGrid(kits)
+		);
+		root.hidden = false;
+	}
+
+	// kit.html?id=<kit>: as cartas, cada uma com o estado e o link para a
+	// página dela, a descrição, o preço e Adicionar.
+	function kitOne(root, kits) {
+		const id = new URLSearchParams(window.location.search).get('id');
+		const kit = kits.find((one) => one.id === id);
+
+		if (!kit) {
+			root.replaceChildren(
+				message('Este kit não está mais à venda: uma das cartas dele foi vendida ou reservada. As cartas que sobraram podem estar à venda uma a uma.'),
+				el('a', {class: 'btn btn-navy', href: 'avulsas.html'}, 'Ver as cartas à venda')
+			);
+			document.title = 'Kit indisponível | HOTARU';
+
+			return;
+		}
+
+		document.title = `${kit.name} | Kits | HOTARU`;
+
+		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
+		const cards = el('ul', {class: 'kit-cards'}, kit.items.map((item) => el('li', {class: 'kit-card'},
+			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
+			el('div', null,
+				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
+				el('p', {class: 'kit-card-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, plainFinish(item.finish) ? null : item.finish].filter(Boolean).join(' · ')),
+				el('p', {class: 'kit-card-alone'}, `Separada: ${brl(item.price)}`)))));
+
+		root.replaceChildren(el('div', {class: 'card-detail kit-detail'},
+			kitShot(kit, {link: false}),
+			el('div', {class: 'card-info'},
+				el('p', {class: 'eyebrow'}, `Kit · ${kitCards(kit.items.length)}`),
+				el('h1', null, kit.name),
+				kitPrice(kit),
+				el('p', {class: 'kit-saving'}, kit.sum > kit.price ? `Separadas, as cartas custam ${brl(kit.sum)}: no kit, você economiza ${brl(Math.round((kit.sum - kit.price) * 100) / 100)}.` : `Separadas, as cartas custam ${brl(kit.sum)}.`),
+				kit.description ? el('div', {class: 'sealed-description'}, richText(kit.description)) : null,
+				cards,
+				el('div', {class: 'buy-box'}, el('div', {class: 'buy-line'}, el('div', {class: 'buy-actions'}, kitAdd(kit, status))), status),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva o kit, e cada carta dele também está à venda sozinha: fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
+			)
+		));
+	}
+
+	const KIT_VIEWS = {homekits: kitsHome, kit: kitOne, kits: kitsAll};
+
+	async function startKits(roots) {
+		let kits;
+
+		try {
+			kits = await readKits();
+		}
+		catch {
+			for (const root of roots) {
+				if (root.dataset.catalog === 'kit') {
+					root.replaceChildren(message('Não foi possível carregar o kit agora. Tente de novo em instantes.'));
+				}
+				else {
+					(root.dataset.catalog === 'homekits' ? root.closest('section') || root : root).hidden = true;
+				}
+			}
+
+			return;
+		}
+
+		for (const root of roots) {
+			KIT_VIEWS[root.dataset.catalog](root, kits);
+		}
+	}
+
 	const VIEWS = {all, card: one, home};
 
 	async function start() {
@@ -1573,13 +1962,19 @@
 			order(orderRoot);
 		}
 
+		const kitRoots = [...document.querySelectorAll('[data-catalog]')].filter((root) => KIT_VIEWS[root.dataset.catalog]);
+
+		if (kitRoots.length) {
+			startKits(kitRoots);
+		}
+
 		const sealedRoots = [...document.querySelectorAll('[data-catalog]')].filter((root) => SEALED_VIEWS[root.dataset.catalog]);
 
 		if (sealedRoots.length) {
 			startSealed(sealedRoots);
 		}
 
-		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot && !SEALED_VIEWS[root.dataset.catalog]);
+		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot && !SEALED_VIEWS[root.dataset.catalog] && !KIT_VIEWS[root.dataset.catalog]);
 
 		if (!roots.length) {
 			return;

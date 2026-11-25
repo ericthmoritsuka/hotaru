@@ -1249,3 +1249,62 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 .carousel-all-count { font: 600 1.6rem/1.1 var(--serif); }
 .carousel-all-text { font: 600 0.82rem/1.3 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-dk); }
 .carousel-foot { display: flex; justify-content: center; margin-top: 18px; }
+
+/* ---------- Kits (assets/catalogo.js, Eric 2026-11-25) ----------
+   Várias cartas vendidas juntas: as fotos em leque na mesma moldura das
+   cartas, o desconto no canto e o preço com a soma riscada. */
+
+.kits-home[hidden], .kits-all[hidden] { display: none; }
+.kits-all { margin-bottom: 44px; }
+.kits-head { margin-bottom: 18px; }
+
+.kit-shot .kit-fan {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+}
+
+.kit-shot .kit-fan .card-pic {
+  grid-area: 1 / 1;
+  width: 46%;
+  transform-origin: 50% 120%;
+}
+
+.cards-grid .kit-shot .kit-fan .card-pic { width: 44%; }
+.kit-fan-2 .card-pic:nth-child(1) { transform: rotate(-9deg) translateX(-14%); }
+.kit-fan-2 .card-pic:nth-child(2) { transform: rotate(9deg) translateX(14%); }
+.kit-fan-3 .card-pic:nth-child(1) { transform: rotate(-14deg) translateX(-22%); }
+.kit-fan-3 .card-pic:nth-child(2) { transform: translateY(-4%); z-index: 2; }
+.kit-fan-3 .card-pic:nth-child(3) { transform: rotate(14deg) translateX(22%); }
+
+.kit-tag { background: var(--lime); }
+
+.kit-more {
+  position: absolute;
+  right: 14px;
+  bottom: 14px;
+  z-index: 2;
+  padding: 5px 9px;
+  border-radius: 999px;
+  background: rgba(247, 239, 220, 0.92);
+  color: var(--navy-deep);
+  font: 600 11px/1 var(--sans);
+}
+
+.kit-price { flex-wrap: wrap; }
+.kit-detail .kit-price { display: flex; align-items: baseline; gap: 12px; margin: 0 0 6px; }
+.kit-detail .kit-price strong { font: 600 1.7rem/1.2 var(--serif); }
+.kit-detail .kit-price s { color: var(--ink-soft); font-size: 1rem; }
+.kit-saving { margin: 0 0 16px; color: var(--ink-soft); font-size: 0.9rem; }
+
+.kit-cards { list-style: none; margin: 0 0 20px; padding: 0; display: grid; gap: 12px; }
+.kit-card { display: grid; grid-template-columns: 56px 1fr; gap: 12px; align-items: center; }
+.kit-card p { margin: 0; }
+.kit-card-pic { width: 56px; aspect-ratio: 63 / 88; object-fit: contain; border-radius: 4px; }
+.kit-card-name a { color: var(--ink); font-weight: 600; }
+.kit-card-meta, .kit-card-alone { font-size: 0.8rem; color: var(--ink-soft); }
+.kit-detail .kit-shot .kit-fan .card-pic { width: 40%; }
+.cart-price s { color: var(--ink-soft); font-size: 0.82em; }
