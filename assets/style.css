@@ -1283,6 +1283,31 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
   .admin-featured .admin-moves, .admin-featured .admin-edit { grid-column: 1 / -1; }
 }
 
+/* Os pontos do carrossel (Eric, 2026-11-25): a barra de rolagem do
+   navegador some, e no lugar dela ficam os pontos, o da página atual um
+   traço dourado. Cada ponto é um botão de 24 px de altura. */
+.carousel-stage { position: relative; }
+.carousel-track { scrollbar-width: none; padding-bottom: 6px; }
+.carousel-track::-webkit-scrollbar { display: none; }
+
+.carousel-dots { display: flex; justify-content: center; gap: 4px; margin-top: 18px; }
+.carousel-dot {
+  width: 24px; height: 24px; padding: 0; border: 0; background: none; cursor: pointer;
+  display: grid; place-items: center;
+}
+.carousel-dot::before {
+  content: ""; width: 8px; height: 8px; border-radius: 999px; background: rgba(14, 31, 71, 0.18);
+  transition: width 0.3s ease, background 0.3s ease;
+}
+.carousel-dot:hover::before { background: rgba(14, 31, 71, 0.35); }
+.carousel-dot.is-current { width: 40px; }
+.carousel-dot.is-current::before { width: 28px; background: var(--foil); }
+.carousel-dot:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 999px; }
+
+@media (prefers-reduced-motion: reduce) {
+  .carousel-dot::before { transition: none; }
+}
+
 /* O blog (blog.html, post.html, a faixa da home; assets/blog.js) e a aba
    Blog da administração. */
 .blog-home { background: var(--ivory); }

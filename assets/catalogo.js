@@ -593,19 +593,67 @@
 	}
 
 	// Um carrossel de rolagem com encaixe: arrasta no celular, setas no
-	// computador. Passa sozinho devagar e para de vez quando a pessoa mexe
-	// nele, ou desde o começo quando o aparelho pede menos movimento.
+	// computador e pontos embaixo. Passa sozinho devagar e para de vez quando
+	// a pessoa mexe nele, ou desde o começo quando o aparelho pede menos
+	// movimento.
+	//
+	// Os pontos (Eric, 2026-11-25) ficam no lugar da barra de rolagem do
+	// navegador, que fica escondida: um por página, e o da página atual é um
+	// traço dourado. Cada um é um botão ("Página 2 de 4") que leva à página.
+	// As setas, os pontos e o passar sozinho andam uma página inteira. A
+	// rolagem continua no dedo, na roda do mouse e nas setas do teclado.
 	function carousel(slides, label) {
 		const track = el('div', {class: 'carousel-track', tabindex: '0'}, slides.map((slide) => el('div', {class: 'carousel-slide'}, slide)));
 		const prev = el('button', {'aria-label': 'Cartas anteriores', class: 'carousel-arrow carousel-prev', type: 'button'}, '‹');
 		const next = el('button', {'aria-label': 'Próximas cartas', class: 'carousel-arrow carousel-next', type: 'button'}, '›');
-		const box = el('div', {'aria-label': label, 'aria-roledescription': 'carrossel', class: 'carousel', role: 'region'}, prev, track, next);
-		const step = () => Math.max(track.clientWidth * 0.8, 160);
+		const dots = el('div', {'aria-label': 'Páginas do carrossel', class: 'carousel-dots', role: 'group'});
+		const box = el('div', {'aria-label': label, 'aria-roledescription': 'carrossel', class: 'carousel', role: 'region'},
+			el('div', {class: 'carousel-stage'}, prev, track, next),
+			dots);
 		let timer = null;
+		let pages = 0;
 
-		const atEnd = () => track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+		const gap = () => parseFloat(getComputedStyle(track).columnGap) || 0;
+		const slideWidth = () => (track.firstElementChild ? track.firstElementChild.offsetWidth + gap() : track.clientWidth);
+		const perView = () => Math.max(1, Math.round((track.clientWidth + gap()) / slideWidth()));
+		const maxLeft = () => Math.max(0, track.scrollWidth - track.clientWidth);
+		const atEnd = () => track.scrollLeft >= maxLeft() - 4;
+		// A página de agora: a do primeiro cartão visível, ou a última quando
+		// a rolagem chegou ao fim.
+		const currentPage = () => (atEnd() ? pages - 1 : Math.floor(Math.round(track.scrollLeft / slideWidth()) / perView()));
+		const pageLeft = (page) => {
+			const first = track.children[Math.min(slides.length - 1, page * perView())];
 
-		function drawArrows() {
+			return Math.min(maxLeft(), first.offsetLeft - track.firstElementChild.offsetLeft);
+		};
+
+		function go(page) {
+			track.scrollTo({behavior: 'smooth', left: pageLeft(Math.max(0, Math.min(pages - 1, page)))});
+		}
+
+		function draw() {
+			const count = Math.ceil(slides.length / perView());
+
+			if (count !== pages) {
+				pages = count;
+				dots.replaceChildren(...Array.from({length: count}, (_, page) => el('button', {
+					'aria-label': `Página ${page + 1} de ${count}`,
+					class: 'carousel-dot',
+					onclick: () => {
+						stop();
+						go(page);
+					},
+					type: 'button',
+				})));
+			}
+
+			const current = currentPage();
+
+			[...dots.children].forEach((dot, page) => {
+				dot.classList.toggle('is-current', page === current);
+				dot.setAttribute('aria-current', page === current ? 'true' : 'false');
+			});
+			dots.hidden = count < 2;
 			prev.disabled = track.scrollLeft <= 4;
 			next.disabled = atEnd();
 		}
@@ -619,13 +667,14 @@
 
 		prev.addEventListener('click', () => {
 			stop();
-			track.scrollBy({behavior: 'smooth', left: -step()});
+			go(currentPage() - 1);
 		});
 		next.addEventListener('click', () => {
 			stop();
-			track.scrollBy({behavior: 'smooth', left: step()});
+			go(currentPage() + 1);
 		});
-		track.addEventListener('scroll', drawArrows, {passive: true});
+		track.addEventListener('scroll', draw, {passive: true});
+		window.addEventListener('resize', draw, {passive: true});
 
 		for (const type of ['pointerdown', 'wheel', 'keydown', 'focusin', 'touchstart']) {
 			box.addEventListener(type, stop, {passive: true});
@@ -645,11 +694,16 @@
 					return;
 				}
 
-				track.scrollTo({behavior: 'smooth', left: atEnd() ? 0 : track.scrollLeft + step()});
+				if (atEnd()) {
+					track.scrollTo({behavior: 'smooth', left: 0});
+				}
+				else {
+					go(currentPage() + 1);
+				}
 			}, CAROUSEL_EVERY_MS);
 		}
 
-		requestAnimationFrame(drawArrows);
+		requestAnimationFrame(draw);
 
 		return box;
 	}
