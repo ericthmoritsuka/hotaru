@@ -275,6 +275,20 @@ home = f'''
   </div>
 </section>
 
+<section class="cartas-home kits-home" id="kits" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Kits</p>
+        <h2>Leve junto, pague menos</h2>
+        <p>Cartas que saem juntas por menos do que separadas.</p>
+      </div>
+      <a class="more" href="avulsas.html">Ver as cartas</a>
+    </div>
+    <div data-catalog="homekits"></div>
+  </div>
+</section>
+
 <section class="cartas-home" id="cartas" hidden>
   <div class="wrap">
     <div class="section-head">
@@ -365,6 +379,7 @@ avulsas = f'''
 </div>
 
 <section class="wrap cartas">
+  <div class="kits-all" data-catalog="kits" hidden></div>
   <div data-catalog="all"><p class="card-note" role="status">Carregando as cartas…</p></div>
 </section>
 '''
@@ -386,6 +401,23 @@ carta = f'''
 
 page("carta", "Carta — HOTARU", carta, "avulsas.html")
 print("carta.html")
+
+# Um kit (Eric, 2026-11-25): várias cartas vendidas juntas, montado na tela
+# Shop do card tracker. A página lê o kit de store_bundles pelo id.
+kit = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; Kit</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-catalog="kit"><p class="card-note" role="status">Carregando o kit…</p></div>
+</section>
+'''
+
+page("kit", "Kit — HOTARU", kit, "avulsas.html")
+print("kit.html")
 
 pedido = f'''
 <div class="pagehead">
