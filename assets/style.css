@@ -1249,3 +1249,36 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 .carousel-all-count { font: 600 1.6rem/1.1 var(--serif); }
 .carousel-all-text { font: 600 0.82rem/1.3 var(--sans); letter-spacing: 0.08em; text-transform: uppercase; color: var(--gold-dk); }
 .carousel-foot { display: flex; justify-content: center; margin-top: 18px; }
+
+/* Os destaques (Eric, 2026-11-25): a faixa no alto das cartas e dos
+   selados, a marca nos anúncios e o anúncio de uma coleção inteira. */
+.featured { margin: 0 0 34px; }
+.featured-title { font: 600 1.5rem/1.2 var(--serif); color: var(--navy); margin: 0 0 16px; }
+.featured-mark {
+  display: inline-block; margin-right: 8px; padding: 3px 8px; border-radius: 999px;
+  background: var(--foil); color: var(--navy-deep); font-weight: 700; letter-spacing: 0.06em;
+}
+.set-item .set-shot { background: var(--ivory); }
+.set-item .price { flex-direction: column; align-items: flex-start; gap: 2px; }
+.set-item .price strong { white-space: nowrap; }
+.set-from { font-size: 0.8rem; color: var(--ink-soft); }
+/* O botão da coleção é só a aparência: o toque vai para o link da carta inteira. */
+.set-item .set-open { position: static; pointer-events: none; }
+
+/* As ferramentas de destaques da administração. */
+.admin-tabs { display: flex; gap: 10px; flex-wrap: wrap; margin: 0 0 18px; }
+.admin-tabs .btn[aria-current="page"] { outline: 2px solid var(--gold); outline-offset: 2px; }
+.admin-featured { display: grid; gap: 22px; max-width: 46rem; }
+.admin-featured h3 { margin: 0 0 4px; font-size: 1.15rem; }
+.admin-moves { display: flex; gap: 6px; }
+.admin-move { min-width: 38px; padding: 8px 10px; border-radius: 8px; border: 1px solid rgba(14, 31, 71, 0.2); background: #fff; color: var(--navy); font: 600 0.9rem var(--sans); cursor: pointer; }
+.admin-move:disabled { opacity: 0.35; cursor: default; }
+.admin-gone { color: #9a3b1b; }
+.admin-search { width: 100%; padding: 10px 12px; border-radius: 10px; border: 1px solid rgba(14, 31, 71, 0.2); font: 0.95rem var(--sans); }
+.admin-results { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 8px; max-height: 26rem; overflow-y: auto; }
+.admin-save-bar { position: sticky; bottom: 0; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; padding: 12px 0; background: var(--page); border-top: 1px solid rgba(14, 31, 71, 0.12); }
+@media (max-width: 480px) {
+  .admin-featured .admin-product { grid-template-columns: 48px minmax(0, 1fr); }
+  .admin-featured .admin-thumb { width: 48px; height: 48px; }
+  .admin-featured .admin-moves, .admin-featured .admin-edit { grid-column: 1 / -1; }
+}

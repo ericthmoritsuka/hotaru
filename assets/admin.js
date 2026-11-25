@@ -357,6 +357,7 @@ async function showList(notice = '') {
 	};
 
 	root.replaceChildren(
+		tabs('selados'),
 		notice ? message(notice, 'admin-done') : '',
 		el('div', {class: 'admin-head'},
 			el('h2', null, products.length ? `Selados (${products.length})` : 'Selados'),
@@ -366,6 +367,328 @@ async function showList(notice = '') {
 			? el('ul', {class: 'admin-list'}, products.map((product) => productRow(product, {onEdit: edit})))
 			: message('Nenhum produto ainda. Cadastre o primeiro com Novo produto.')
 	);
+}
+
+// As duas partes da administração: os selados e os destaques.
+function tabs(current) {
+	const tab = (id, label, open) => el('button', {
+		'aria-current': current === id ? 'page' : null,
+		class: `btn ${current === id ? 'btn-gold' : 'btn-navy'}`,
+		id: `admin-tab-${id}`,
+		onclick: () => {
+			if (current !== id) {
+				open();
+			}
+		},
+		type: 'button',
+	}, label);
+
+	return el('nav', {'aria-label': 'Administração', class: 'admin-tabs'},
+		tab('selados', 'Selados', () => showList()),
+		tab('destaques', 'Destaques', () => showFeatured())
+	);
+}
+
+// ------------------------------------------------------------ featured
+
+// Os destaques (Eric, 2026-11-25): o que aparece primeiro na home, em
+// Cartas avulsas e em Selados, na ordem daqui. Cartas e coleções vêm do
+// catálogo que o Shop do tracker publica (store_catalog); selados, dos
+// produtos desta página. Salvar troca a lista inteira (save_featured, em
+// supabase/store-featured.sql do card tracker). Um destaque que não está
+// à venda agora continua na lista e o site o pula até voltar.
+
+const MAX_FEATURED = 60;
+const MAX_RESULTS = 20;
+
+const fold = (text) => String(text || '').normalize('NFKD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+const cardKey = (item) => `card|${item.card_id}|${item.language || ''}|${item.finish || ''}`;
+const itemKey = (item) => (item.kind === 'card' ? cardKey(item) : item.kind === 'set' ? `set|${item.set_name}` : `product|${item.product_id}`);
+
+// O catálogo em anúncios (carta + idioma + acabamento) e em coleções, como
+// o site os mostra.
+function catalogEntries(rows) {
+	const entries = new Map();
+
+	for (const row of rows) {
+		if (row.kind !== 'single' || !row.card_id) {
+			continue;
+		}
+
+		const card = {card_id: row.card_id, finish: row.finish || '', kind: 'card', language: row.language || ''};
+		const key = cardKey(card);
+
+		if (!entries.has(key)) {
+			entries.set(key, {...card, copies: 0, image: null, name: row.name, number: row.number, price: Infinity, set_name: row.set_name});
+		}
+
+		const entry = entries.get(key);
+
+		entry.copies += 1;
+		entry.price = Math.min(entry.price, Number(row.price_brl));
+		entry.image = entry.image || row.image_path;
+
+		if (row.set_name) {
+			const setKey = `set|${row.set_name}`;
+
+			if (!entries.has(setKey)) {
+				entries.set(setKey, {cards: new Set(), image: null, kind: 'set', price: Infinity, set_name: row.set_name, top: -Infinity});
+			}
+
+			const set = entries.get(setKey);
+
+			set.cards.add(key);
+			set.price = Math.min(set.price, Number(row.price_brl));
+
+			if (Number(row.price_brl) > set.top && row.image_path) {
+				set.top = Number(row.price_brl);
+				set.image = row.image_path;
+			}
+		}
+	}
+
+	return entries;
+}
+
+const LANGUAGE_NAMES = {...LANGUAGES, de: 'Alemão', es: 'Espanhol', fr: 'Francês', it: 'Italiano', 'zh-cn': 'Chinês simplificado'};
+
+// O que a linha diz de um destaque: nome e detalhes, e se está à venda.
+function describe(item, entries, products) {
+	if (item.kind === 'product') {
+		const product = products.get(item.product_id);
+
+		if (!product) {
+			return {gone: 'Produto apagado', image: null, meta: 'Selado', name: 'Produto'};
+		}
+
+		return {
+			gone: !product.active ? 'Fora da loja: o site não mostra' : !product.available ? 'Sem unidade à venda: o site não mostra agora' : '',
+			image: product.photos && product.photos[0],
+			meta: [product.category || 'Selado', LANGUAGE_NAMES[product.language], brl(product.price_brl)].filter(Boolean).join(' · '),
+			name: product.name,
+		};
+	}
+
+	const entry = entries.get(itemKey(item));
+
+	if (item.kind === 'set') {
+		return entry
+			? {gone: '', image: entry.image, meta: `Coleção · ${entry.cards.size === 1 ? '1 carta' : `${entry.cards.size} cartas`} · a partir de ${brl(entry.price)}`, name: item.set_name}
+			: {gone: 'Nenhuma carta à venda agora: o site não mostra', image: null, meta: 'Coleção', name: item.set_name};
+	}
+
+	const details = (one) => ['Carta', one.set_name, one.number ? `nº ${one.number}` : null, LANGUAGE_NAMES[one.language] || one.language.toUpperCase(), one.finish || null].filter(Boolean).join(' · ');
+
+	return entry
+		? {gone: '', image: entry.image, meta: `${details(entry)} · ${brl(entry.price)}`, name: entry.name}
+		: {gone: 'Não está à venda agora: o site não mostra', image: null, meta: details({...item, set_name: null}), name: item.card_id};
+}
+
+function featuredRow(info, {first, last, onMove, onRemove}) {
+	return el('li', {class: `admin-product${info.gone ? ' admin-inactive' : ''}`},
+		info.image ? el('img', {alt: '', class: 'admin-thumb', loading: 'lazy', src: photoUrl(info.image)}) : el('span', {'aria-hidden': 'true', class: 'admin-thumb admin-thumb-none'}),
+		el('div', {class: 'admin-product-body'},
+			el('p', {class: 'admin-product-name'}, info.name),
+			el('p', {class: 'admin-product-meta'}, info.meta),
+			info.gone ? el('p', {class: 'admin-product-counts admin-gone'}, info.gone) : ''
+		),
+		el('div', {class: 'admin-moves'},
+			el('button', {'aria-label': `Subir ${info.name}`, class: 'admin-move', disabled: first, onclick: () => onMove(-1), type: 'button'}, '↑'),
+			el('button', {'aria-label': `Descer ${info.name}`, class: 'admin-move', disabled: last, onclick: () => onMove(1), type: 'button'}, '↓'),
+			el('button', {'aria-label': `Tirar ${info.name} dos destaques`, class: 'admin-move', onclick: onRemove, type: 'button'}, 'Tirar')
+		)
+	);
+}
+
+function addRow(info, onAdd) {
+	return el('li', {class: 'admin-product'},
+		info.image ? el('img', {alt: '', class: 'admin-thumb', loading: 'lazy', src: photoUrl(info.image)}) : el('span', {'aria-hidden': 'true', class: 'admin-thumb admin-thumb-none'}),
+		el('div', {class: 'admin-product-body'},
+			el('p', {class: 'admin-product-name'}, info.name),
+			el('p', {class: 'admin-product-meta'}, info.meta),
+			info.gone ? el('p', {class: 'admin-product-counts admin-gone'}, info.gone) : ''
+		),
+		el('button', {'aria-label': `Pôr ${info.name} nos destaques`, class: 'btn btn-navy admin-edit', onclick: onAdd, type: 'button'}, 'Destacar')
+	);
+}
+
+async function showFeatured(notice = '') {
+	root.replaceChildren(tabs('destaques'), message('Carregando os destaques…'));
+
+	const [featured, catalog, admin] = await Promise.all([
+		client.rpc('store_featured'),
+		client.rpc('store_catalog'),
+		client.rpc('store_products_admin'),
+	]);
+	const error = featured.error || catalog.error || admin.error;
+
+	if (error) {
+		root.replaceChildren(tabs('destaques'), message(error.code === '42501'
+			? 'Esta conta não é a dona da loja. Entre no card tracker com a conta do Eric.'
+			: error.code === 'PGRST202'
+				? 'Os destaques ainda não existem no banco: rode supabase/store-featured.sql no Supabase.'
+				: `Não foi possível ler os destaques. ${error.message}`));
+
+		return;
+	}
+
+	const entries = catalogEntries(Array.isArray(catalog.data) ? catalog.data : []);
+	const products = new Map((Array.isArray(admin.data) ? admin.data : []).map((product) => [product.id, product]));
+	const saved = Array.isArray(featured.data) ? featured.data : [];
+	// As duas listas, cada uma na ordem do Eric: cartas e coleções, selados.
+	const lists = {
+		cards: saved.filter((item) => item.kind !== 'product'),
+		products: saved.filter((item) => item.kind === 'product'),
+	};
+	const status = el('p', {class: 'admin-status', role: 'status'}, notice);
+	const saveButton = el('button', {class: 'btn btn-gold', id: 'admin-save-featured', type: 'button'}, 'Salvar destaques');
+	const cardBox = el('div');
+	const productBox = el('div');
+	const search = el('input', {'aria-label': 'Buscar carta ou coleção', class: 'admin-search', placeholder: 'Buscar carta ou coleção à venda', type: 'search'});
+	const results = el('ul', {class: 'admin-results'});
+	const productResults = el('ul', {class: 'admin-results'});
+	let dirty = false;
+
+	const has = (item) => [...lists.cards, ...lists.products].some((one) => itemKey(one) === itemKey(item));
+	const total = () => lists.cards.length + lists.products.length;
+
+	function changed() {
+		dirty = true;
+		status.className = 'admin-status';
+		status.textContent = 'Alterações não salvas.';
+		draw();
+	}
+
+	function add(listName, item) {
+		if (total() >= MAX_FEATURED) {
+			status.textContent = `No máximo ${MAX_FEATURED} destaques.`;
+
+			return;
+		}
+
+		lists[listName].push(item);
+		changed();
+	}
+
+	function drawList(listName, box, empty) {
+		const list = lists[listName];
+
+		box.replaceChildren(list.length
+			? el('ol', {class: 'admin-list'}, list.map((item, index) => featuredRow(describe(item, entries, products), {
+				first: index === 0,
+				last: index === list.length - 1,
+				onMove: (step) => {
+					const [moved] = list.splice(index, 1);
+
+					list.splice(index + step, 0, moved);
+					changed();
+				},
+				onRemove: () => {
+					list.splice(index, 1);
+					changed();
+				},
+			})))
+			: message(empty));
+	}
+
+	function drawResults() {
+		const words = fold(search.value).split(/\s+/).filter(Boolean);
+
+		if (!words.length) {
+			results.replaceChildren();
+
+			return;
+		}
+
+		const found = [...entries.values()]
+			.filter((entry) => !has(entry))
+			.map((entry) => ({entry, info: describe(entry, entries, products)}))
+			.filter(({info}) => {
+				const text = fold(`${info.name} ${info.meta}`);
+
+				return words.every((word) => text.includes(word));
+			})
+			// As coleções antes das cartas, depois pelo nome.
+			.sort((a, b) => (a.entry.kind === 'set' ? 0 : 1) - (b.entry.kind === 'set' ? 0 : 1) || a.info.name.localeCompare(b.info.name, 'pt-BR'))
+			.slice(0, MAX_RESULTS);
+
+		results.replaceChildren(...(found.length
+			? found.map(({entry, info}) => addRow(info, () => add('cards', entry.kind === 'set'
+				? {kind: 'set', set_name: entry.set_name}
+				: {card_id: entry.card_id, finish: entry.finish, kind: 'card', language: entry.language})))
+			: [el('li', null, message('Nada à venda com esse nome.'))]));
+	}
+
+	function drawProductResults() {
+		const left = [...products.values()].filter((product) => !has({kind: 'product', product_id: product.id}));
+
+		productResults.replaceChildren(...left.map((product) => addRow(describe({kind: 'product', product_id: product.id}, entries, products), () => add('products', {kind: 'product', product_id: product.id}))));
+	}
+
+	function draw() {
+		drawList('cards', cardBox, 'Nenhuma carta ou coleção em destaque. A home mostra as de maior preço.');
+		drawList('products', productBox, 'Nenhum selado em destaque. Os selados aparecem na ordem de sempre.');
+		drawResults();
+		drawProductResults();
+	}
+
+	search.addEventListener('input', drawResults);
+
+	saveButton.addEventListener('click', async () => {
+		saveButton.disabled = true;
+		status.className = 'admin-status';
+		status.textContent = 'Salvando…';
+
+		const items = [...lists.cards, ...lists.products].map((item) => (item.kind === 'card'
+			? {card_id: item.card_id, finish: item.finish || '', kind: 'card', language: item.language || ''}
+			: item.kind === 'set'
+				? {kind: 'set', set_name: item.set_name}
+				: {kind: 'product', product_id: item.product_id}));
+		const {error: saveError} = await client.rpc('save_featured', {items});
+
+		saveButton.disabled = false;
+
+		if (saveError) {
+			status.textContent = `Não foi possível salvar. ${saveError.message}`;
+
+			return;
+		}
+
+		dirty = false;
+		showFeatured('Destaques salvos. O site já mostra a nova ordem.');
+	});
+
+	const back = () => {
+		if (!dirty || window.confirm('Sair sem salvar os destaques?')) {
+			showList();
+		}
+	};
+
+	root.replaceChildren(
+		el('nav', {'aria-label': 'Administração', class: 'admin-tabs'},
+			el('button', {class: 'btn btn-navy', id: 'admin-tab-selados', onclick: back, type: 'button'}, 'Selados'),
+			el('button', {'aria-current': 'page', class: 'btn btn-gold', id: 'admin-tab-destaques', type: 'button'}, 'Destaques')
+		),
+		el('div', {class: 'admin-featured'},
+			el('p', {class: 'admin-hint'}, 'O que fica no alto do site, nesta ordem. Cartas e coleções aparecem primeiro na home e em Cartas avulsas; selados, primeiro em Selados e na home.'),
+			el('section', {'aria-labelledby': 'admin-featured-cards'},
+				el('h3', {id: 'admin-featured-cards'}, 'Cartas avulsas'),
+				cardBox,
+				el('label', {class: 'admin-hint'}, 'Destacar uma carta ou uma coleção inteira:'),
+				search,
+				results
+			),
+			el('section', {'aria-labelledby': 'admin-featured-products'},
+				el('h3', {id: 'admin-featured-products'}, 'Selados'),
+				productBox,
+				products.size ? el('p', {class: 'admin-hint'}, 'Destacar um selado:') : '',
+				productResults
+			),
+			el('div', {class: 'admin-save-bar'}, saveButton, status)
+		)
+	);
+	draw();
 }
 
 async function start() {
