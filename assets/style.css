@@ -1289,10 +1289,10 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 .post-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 22px; }
 .post-card { position: relative; display: flex; flex-direction: column; background: #fff; border: 1px solid rgba(14, 31, 71, 0.1); border-radius: 14px; overflow: hidden; box-shadow: var(--shadow-sm); transition: box-shadow .2s ease, transform .2s ease; }
 .post-card:hover { box-shadow: var(--shadow-md); transform: translateY(-2px); }
-.post-card-cover { display: block; aspect-ratio: 16 / 9; background: linear-gradient(160deg, #18335f 0%, var(--navy) 45%, var(--navy-deep) 100%); }
-.post-card-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.post-card-nocover { display: grid; place-items: center; }
-.post-card-nocover .post-card-mark { width: auto; height: 58%; object-fit: contain; filter: drop-shadow(0 0 14px var(--lime-glow)); }
+.post-card-cover { position: relative; display: block; aspect-ratio: 16 / 9; background: linear-gradient(160deg, #18335f 0%, var(--navy) 45%, var(--navy-deep) 100%); }
+.post-card-cover img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Sem capa, o vaga-lume no meio, sem mudar a altura do cartão. */
+.post-card-nocover .post-card-mark { position: absolute; inset: 0; margin: auto; width: auto; height: 58%; object-fit: contain; filter: drop-shadow(0 0 14px var(--lime-glow)); }
 .post-card-body { padding: 16px 18px 20px; display: grid; gap: 6px; }
 .post-card-body .eyebrow { margin: 0; }
 .post-card-body h3 { margin: 0; font-size: 1.2rem; line-height: 1.3; }
@@ -1349,6 +1349,17 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 .admin-editor-wrap .ql-snow .ql-tooltip a.ql-remove::before { content: "Tirar"; }
 .admin-editor-wrap .ql-snow .ql-tooltip.ql-editing a.ql-action::after { content: "Salvar"; }
 .admin-editor-wrap .ql-snow .ql-tooltip { z-index: 3; }
+.admin-text-head { display: flex; align-items: center; gap: 10px 14px; flex-wrap: wrap; margin-top: 6px; }
+.admin-text-head label { margin: 0; }
+.admin-mode { display: inline-flex; gap: 6px; }
+.admin-mode .btn { padding: 8px 14px; font-size: 11px; }
+.admin-mode .btn[aria-pressed="true"] { outline: 2px solid var(--gold); outline-offset: 2px; }
+.admin-text-head .admin-link { font-size: 0.85rem; }
+.admin-markdown-pane { display: grid; gap: 10px; }
+.admin-markdown-pane[hidden], .admin-editor-wrap[hidden] { display: none; }
+.admin-markdown { width: 100%; min-height: 22rem; padding: 14px; border-radius: 10px; border: 1px solid rgba(14, 31, 71, 0.2); background: #fff; color: var(--ink); font: 0.92rem/1.6 ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace; resize: vertical; tab-size: 2; }
+.admin-markdown:focus { outline: 2px solid var(--gold); outline-offset: 1px; }
+.admin-editor-hint { margin-top: 2px; }
 .admin-video { display: grid; gap: 8px; padding: 12px; background: #fff; border: 1px solid var(--gold); border-radius: 10px; }
 .admin-video[hidden] { display: none; }
 .admin-post-form .admin-save-bar .admin-status { flex-basis: 100%; }
@@ -1366,4 +1377,5 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
   .post-body { font-size: 1rem; }
   .admin-preview-box { padding: 14px; }
   .admin-editor .ql-editor { min-height: 16rem; }
+  .admin-markdown { min-height: 16rem; font-size: 0.86rem; }
 }

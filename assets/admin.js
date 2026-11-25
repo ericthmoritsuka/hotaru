@@ -15,8 +15,11 @@
 //
 // A aba Blog (Eric, 2026-11-25) escreve os posts num editor visual (Quill,
 // em assets/vendor, carregado pela página antes deste módulo). As fotos dos
-// posts vão para blog/<post>/ no mesmo bucket.
+// posts vão para blog/<post>/ no mesmo bucket. O editor também aceita
+// Markdown (assets/blog-markdown.js): atalhos ao digitar, texto colado e um
+// modo de escrever em Markdown puro.
 
+import {deltaToMarkdown, looksLikeMarkdown, markdownToDelta, readMarkdownFile} from './blog-markdown.js';
 import {YT_EMBED, blogPhotoUrl, isBlogPath, plainText, postDate, renderPost, youtubeId} from './blog-render.js';
 import {createClient} from './vendor/supabase-js-2.117.2.js';
 
@@ -704,10 +707,40 @@ async function showFeatured(notice = '') {
 
 const BLOG_CATEGORIES = ['Pokémon TCG', 'Coleção', 'Outros'];
 const PUBLIC_PREFIX = `${SUPABASE_URL}/storage/v1/object/public/${BUCKET}/`;
-const POST_FORMATS = ['header', 'bold', 'italic', 'underline', 'strike', 'link', 'blockquote', 'list', 'image', 'video'];
+// Sem sublinhado: o Markdown não tem, e as duas formas de escrever devem
+// dar o mesmo post.
+const POST_FORMATS = ['header', 'bold', 'italic', 'strike', 'link', 'blockquote', 'list', 'image', 'video'];
+const EDITOR_MODE_KEY = 'hotaru.blogEditorMode';
+
+// Atalhos de Markdown ao digitar: o sinal some e o texto ganha o formato.
+const INLINE_SHORTCUTS = [
+	[/(?<![*\\])\*\*([^*\s](?:[^*]*[^*\s])?)\*\*$/, {bold: true}],
+	[/(?<![\w\\])__([^_\s](?:[^_]*[^_\s])?)__$/, {bold: true}],
+	[/(?<![~\\])~~([^~\s](?:[^~]*[^~\s])?)~~$/, {strike: true}],
+	[/(?<![*\\])\*([^*\s](?:[^*]*[^*\s])?)\*$/, {italic: true}],
+	[/(?<![\w_\\])_([^_\s](?:[^_]*[^_\s])?)_$/, {italic: true}],
+];
+
+function readMode() {
+	try {
+		return window.localStorage.getItem(EDITOR_MODE_KEY) === 'markdown' ? 'markdown' : 'visual';
+	}
+	catch {
+		return 'visual';
+	}
+}
+
+function keepMode(mode) {
+	try {
+		window.localStorage.setItem(EDITOR_MODE_KEY, mode);
+	}
+	catch {
+		// Sem armazenamento, o editor só não lembra o modo.
+	}
+}
 const POST_TOOLBAR = [
 	[{header: [2, 3, false]}],
-	['bold', 'italic', 'underline', 'strike'],
+	['bold', 'italic', 'strike'],
 	[{list: 'ordered'}, {list: 'bullet'}, 'blockquote'],
 	['link', 'image', 'video'],
 	['clean'],
@@ -833,9 +866,37 @@ function postForm(post, {categories, onBack}) {
 	const buttons = el('div', {class: 'admin-actions admin-save-bar'});
 	let videoRange = null;
 
+	const markdown = el('textarea', {'aria-label': 'Texto em Markdown', class: 'admin-markdown', id: 'admin-post-markdown', rows: 18, spellcheck: 'true'});
+	const markdownPane = el('div', {class: 'admin-markdown-pane', hidden: true}, markdown);
+	const modeButtons = el('div', {'aria-label': 'Como escrever', class: 'admin-mode', role: 'group'});
+	const editorHint = el('p', {class: 'admin-hint admin-editor-hint'});
+	let mode = 'visual';
+
 	const quill = new window.Quill(editorBox, {
 		formats: POST_FORMATS,
 		modules: {
+			keyboard: {
+				bindings: {
+					// "## " vira título, "### " subtítulo e "> " citação. As listas
+					// ("- " e "1. ") o Quill já faz sozinho.
+					markdownBlock: {
+						collapsed: true,
+						handler(range, context) {
+							const mark = context.prefix.trim();
+							const start = range.index - context.prefix.length;
+							const format = mark === '>' ? {blockquote: true} : {header: mark.length >= 3 ? 3 : 2};
+
+							this.quill.deleteText(start, context.prefix.length, 'user');
+							this.quill.formatLine(start, 1, format, 'user');
+							this.quill.setSelection(start, 0, 'silent');
+
+							return false;
+						},
+						key: ' ',
+						prefix: /^\s*(#{1,3}|>)$/,
+					},
+				},
+			},
 			toolbar: {
 				container: POST_TOOLBAR,
 				handlers: {
@@ -863,7 +924,7 @@ function postForm(post, {categories, onBack}) {
 
 	// Os botões da barra sem nome visível ganham um, para leitores de tela.
 	for (const [selector, label] of [
-		['.ql-bold', 'Negrito'], ['.ql-italic', 'Itálico'], ['.ql-underline', 'Sublinhado'], ['.ql-strike', 'Riscado'],
+		['.ql-bold', 'Negrito'], ['.ql-italic', 'Itálico'], ['.ql-strike', 'Riscado'],
 		['.ql-list[value="ordered"]', 'Lista numerada'], ['.ql-list[value="bullet"]', 'Lista com marcadores'],
 		['.ql-blockquote', 'Citação'], ['.ql-link', 'Link'], ['.ql-image', 'Foto'], ['.ql-video', 'Vídeo do YouTube'],
 		['.ql-clean', 'Tirar a formatação'],
@@ -882,6 +943,184 @@ function postForm(post, {categories, onBack}) {
 		if (!busy) {
 			status.textContent = 'Alterações não salvas.';
 		}
+	}
+
+	const Delta = window.Quill.import('delta');
+
+	// **negrito**, __negrito__, *itálico*, _itálico_ e ~~riscado~~ viram o
+	// formato quando o segundo sinal é digitado; [texto](link) vira link
+	// quando o ) fecha.
+	function shortcuts(delta) {
+		const last = delta.ops[delta.ops.length - 1];
+		const range = quill.getSelection();
+
+		if (!range || range.length || !last || typeof last.insert !== 'string' || last.insert.length !== 1) {
+			return;
+		}
+
+		const [, offset] = quill.getLine(range.index);
+		const start = range.index - offset;
+		const before = quill.getText(start, offset);
+		const link = before.match(/\[([^\]]+)\]\(([^)\s]+)\)$/);
+		let found = null;
+
+		if (link) {
+			found = {attributes: {link: link[2]}, at: start + link.index, length: link[0].length, text: link[1]};
+		}
+		else {
+			for (const [pattern, attributes] of INLINE_SHORTCUTS) {
+				const match = before.match(pattern);
+
+				if (match) {
+					found = {attributes, at: start + match.index, length: match[0].length, text: match[1]};
+
+					break;
+				}
+			}
+		}
+
+		if (!found) {
+			return;
+		}
+
+		// Na hora, antes da próxima tecla: com digitação rápida, esperar faria
+		// o cursor voltar para o meio do texto.
+		quill.updateContents(new Delta().retain(found.at).delete(found.length).insert(found.text, found.attributes), 'user');
+		quill.setSelection(found.at + found.text.length, 0, 'silent');
+
+		for (const name of Object.keys(found.attributes)) {
+			quill.format(name, false, 'silent');
+		}
+	}
+
+	// Um texto em Markdown colado entra formatado. Um texto com formato de
+	// verdade (de um site ou de um editor de texto) segue o caminho normal do
+	// editor, e fotos coladas sobem pelo uploader.
+	editorWrap.addEventListener('paste', (event) => {
+		const data = event.clipboardData;
+
+		if (!data || data.files.length) {
+			return;
+		}
+
+		const text = data.getData('text/plain');
+		const html = data.getData('text/html');
+
+		if (!looksLikeMarkdown(text) || /<(h[1-6]|ul|ol|li|strong|b|em|i|a|blockquote)[\s>]/i.test(html)) {
+			return;
+		}
+
+		event.preventDefault();
+		event.stopPropagation();
+
+		const range = quill.getSelection(true);
+		const file = readMarkdownFile(text);
+
+		fillFromFile(file);
+
+		const pasted = new Delta(markdownToDelta(file.markdown).ops);
+
+		quill.updateContents(new Delta().retain(range.index).delete(range.length).concat(pasted), 'user');
+		quill.setSelection(range.index + pasted.length(), 0, 'silent');
+		quill.scrollSelectionIntoView();
+	}, true);
+
+	// O título e o resumo de um arquivo .md, só nos campos ainda vazios.
+	function fillFromFile(file) {
+		if (file.title && !title.value.trim()) {
+			title.value = file.title.slice(0, 140);
+		}
+
+		if (file.summary && !summary.value.trim()) {
+			summary.value = file.summary.slice(0, 300);
+		}
+	}
+
+	// Importar um arquivo .md: o texto do arquivo toma o lugar do texto do
+	// post (depois de perguntar, se já há texto), e o front matter preenche o
+	// título e o resumo vazios.
+	const importFile = el('input', {accept: '.md,.markdown,.txt,text/markdown,text/plain', hidden: true, id: 'admin-post-import', type: 'file'});
+
+	importFile.addEventListener('change', async () => {
+		const [picked] = importFile.files;
+
+		importFile.value = '';
+
+		if (!picked) {
+			return;
+		}
+
+		const hasText = mode === 'markdown' ? markdown.value.trim() : quill.getText().trim() || quill.getLength() > 1;
+
+		if (hasText && !window.confirm('Trocar o texto do post pelo do arquivo?')) {
+			return;
+		}
+
+		const file = readMarkdownFile(await picked.text());
+
+		fillFromFile(file);
+
+		if (mode === 'markdown') {
+			markdown.value = file.markdown;
+		}
+		else {
+			quill.setContents(markdownToDelta(file.markdown), 'user');
+		}
+
+		changed();
+		status.textContent = `${picked.name}: importado. Confira e salve.`;
+	});
+
+	// O texto do modo Markdown passa para o editor (antes de salvar, da prévia
+	// e de voltar ao visual).
+	function syncFromMarkdown() {
+		if (mode === 'markdown') {
+			quill.setContents(markdownToDelta(markdown.value), 'silent');
+		}
+	}
+
+	function setMode(next) {
+		if (next === 'markdown' && mode !== 'markdown') {
+			markdown.value = deltaToMarkdown(quill.getContents());
+		}
+		else if (next === 'visual' && mode === 'markdown') {
+			syncFromMarkdown();
+		}
+
+		mode = next;
+		keepMode(next);
+		editorWrap.hidden = next === 'markdown';
+		markdownPane.hidden = next !== 'markdown';
+		editorHint.textContent = next === 'markdown'
+			? 'Markdown: # ou ## título, ### subtítulo, **negrito**, *itálico*, ~~riscado~~, - lista, 1. lista, > citação, [texto](link). Uma linha só com o link de um vídeo do YouTube vira o vídeo. Fotos e vídeos também entram pelos botões abaixo.'
+			: 'Aceita Markdown ao digitar: ## título, ### subtítulo, **negrito**, *itálico*, ~~riscado~~, - lista, 1. lista, > citação e [texto](link). Um texto em Markdown colado entra formatado.';
+		modeButtons.replaceChildren(...[['visual', 'Visual'], ['markdown', 'Markdown']].map(([id, label]) => el('button', {
+			'aria-pressed': String(next === id),
+			class: `btn ${next === id ? 'btn-gold' : 'btn-navy'}`,
+			id: `admin-mode-${id}`,
+			onclick: () => {
+				if (mode !== id) {
+					setMode(id);
+					(id === 'markdown' ? markdown : quill).focus();
+				}
+			},
+			type: 'button',
+		}, label)));
+	}
+
+	markdown.addEventListener('input', changed);
+
+	// Insere no modo Markdown, no lugar do cursor, numa linha só dela.
+	function insertMarkdownLine(text) {
+		const at = markdown.selectionStart ?? markdown.value.length;
+		const before = markdown.value.slice(0, at);
+		const after = markdown.value.slice(markdown.selectionEnd ?? at);
+		const lead = before && !before.endsWith('\n') ? '\n' : '';
+		const tail = after.startsWith('\n') ? '' : '\n';
+
+		markdown.value = `${before}${lead}${text}${tail}${after}`;
+		markdown.selectionStart = markdown.selectionEnd = before.length + lead.length + text.length + tail.length;
+		changed();
 	}
 
 	const guard = (event) => {
@@ -906,6 +1145,7 @@ function postForm(post, {categories, onBack}) {
 	quill.on('text-change', (delta, old, source) => {
 		if (source === 'user') {
 			changed();
+			shortcuts(delta);
 		}
 	});
 
@@ -922,6 +1162,12 @@ function postForm(post, {categories, onBack}) {
 
 			try {
 				const path = await uploadTo(folder, await shrink(file));
+
+				if (mode === 'markdown') {
+					insertMarkdownLine(`![foto](${blogPhotoUrl(path)})`);
+
+					continue;
+				}
 
 				quill.insertEmbed(index, 'image', blogPhotoUrl(path), 'user');
 				index += 1;
@@ -941,7 +1187,7 @@ function postForm(post, {categories, onBack}) {
 		const files = [...imageFiles.files];
 
 		imageFiles.value = '';
-		insertImages(files, quill.getSelection(true));
+		insertImages(files, mode === 'markdown' ? null : quill.getSelection(true));
 	});
 
 	function insertVideo() {
@@ -954,11 +1200,19 @@ function postForm(post, {categories, onBack}) {
 			return;
 		}
 
+		videoPanel.hidden = true;
+
+		if (mode === 'markdown') {
+			insertMarkdownLine(`https://youtu.be/${videoId}`);
+			markdown.focus();
+
+			return;
+		}
+
 		const index = videoRange ? videoRange.index : quill.getLength() - 1;
 
 		quill.insertEmbed(index, 'video', `${YT_EMBED}${videoId}`, 'user');
 		quill.setSelection(index + 1, 0, 'silent');
-		videoPanel.hidden = true;
 		status.textContent = 'Alterações não salvas.';
 	}
 
@@ -976,7 +1230,7 @@ function postForm(post, {categories, onBack}) {
 			el('button', {class: 'btn btn-gold', id: 'admin-video-insert', onclick: insertVideo, type: 'button'}, 'Inserir vídeo'),
 			el('button', {class: 'btn btn-navy', onclick: () => {
 				videoPanel.hidden = true;
-				quill.focus();
+				(mode === 'markdown' ? markdown : quill).focus();
 			}, type: 'button'}, 'Cancelar')
 		)
 	);
@@ -1013,6 +1267,8 @@ function postForm(post, {categories, onBack}) {
 
 			return;
 		}
+
+		syncFromMarkdown();
 
 		const {body} = await fromEditor(quill.getContents(), folder, {upload: false});
 
@@ -1055,6 +1311,7 @@ function postForm(post, {categories, onBack}) {
 			}
 
 			status.textContent = 'Salvando…';
+			syncFromMarkdown();
 
 			const {body, removed} = await fromEditor(quill.getContents(), folder);
 			const {data, error} = await client.rpc('save_post', {post: {
@@ -1122,8 +1379,18 @@ function postForm(post, {categories, onBack}) {
 		);
 	}
 
+	markdownPane.append(el('div', {class: 'admin-actions admin-markdown-tools'},
+		el('button', {class: 'btn btn-navy', id: 'admin-markdown-photo', onclick: () => imageFiles.click(), type: 'button'}, 'Inserir foto'),
+		el('button', {class: 'btn btn-navy', id: 'admin-markdown-video', onclick: () => {
+			videoPanel.hidden = false;
+			videoInput.value = '';
+			videoInput.focus();
+		}, type: 'button'}, 'Inserir vídeo')
+	));
+
 	drawCover();
 	drawButtons();
+	setMode(readMode());
 
 	const form = el('form', {class: 'admin-form admin-post-form', id: 'admin-post-form', novalidate: true, onsubmit: (event) => event.preventDefault()},
 		el('h2', null, post ? 'Editar post' : 'Novo post'),
@@ -1133,8 +1400,13 @@ function postForm(post, {categories, onBack}) {
 		el('label', {for: 'admin-post-cover'}, 'Capa (opcional)'), coverBox, coverFile,
 		el('label', {for: 'admin-post-summary'}, 'Resumo (opcional)'), summary,
 		el('p', {class: 'admin-hint'}, 'Aparece na lista do blog. Sem resumo, a lista mostra o começo do texto.'),
-		el('label', {onclick: () => quill.focus()}, 'Texto'),
-		editorWrap, videoPanel, imageFiles,
+		el('div', {class: 'admin-text-head'},
+			el('label', {onclick: () => (mode === 'markdown' ? markdown : quill).focus()}, 'Texto'),
+			modeButtons,
+			el('button', {class: 'admin-link', id: 'admin-post-import-button', onclick: () => importFile.click(), type: 'button'}, 'Importar arquivo .md'),
+			importFile
+		),
+		editorWrap, markdownPane, editorHint, videoPanel, imageFiles,
 		buttons,
 		preview
 	);
