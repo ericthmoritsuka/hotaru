@@ -593,40 +593,70 @@
 	}
 
 	// Um carrossel de rolagem com encaixe: arrasta no celular, setas no
-	// computador. Passa sozinho devagar e para de vez quando a pessoa mexe
-	// nele, ou desde o começo quando o aparelho pede menos movimento.
+	// computador e pontos embaixo. Passa sozinho devagar e para de vez quando
+	// a pessoa mexe nele, ou desde o começo quando o aparelho pede menos
+	// movimento.
+	//
+	// Os pontos (Eric, 2026-11-25) ficam no lugar da barra de rolagem do
+	// navegador, que fica escondida: um por página, e o da página atual é um
+	// traço dourado. Cada um é um botão ("Página 2 de 4") que leva à página.
+	// As setas, os pontos e o passar sozinho andam uma página inteira. A
+	// rolagem continua no dedo, na roda do mouse e nas setas do teclado.
 	function carousel(slides, label) {
 		const track = el('div', {class: 'carousel-track', tabindex: '0'}, slides.map((slide) => el('div', {class: 'carousel-slide'}, slide)));
 		const prev = el('button', {'aria-label': 'Cartas anteriores', class: 'carousel-arrow carousel-prev', type: 'button'}, '‹');
 		const next = el('button', {'aria-label': 'Próximas cartas', class: 'carousel-arrow carousel-next', type: 'button'}, '›');
-		// PROTÓTIPO: ?barra=pontos|linha|contador escolhe a barra embaixo do
-		// carrossel; a versão final fica só com a que o Eric escolher.
-		const kind = new URLSearchParams(window.location.search).get('barra') || 'linha';
-		const bar = carouselBar(kind, track, slides.length, {
-			go: (left) => {
-				stop();
-				track.scrollTo({behavior: 'smooth', left});
-			},
-			step: (sign) => {
-				stop();
-				track.scrollBy({behavior: 'smooth', left: sign * step()});
-			},
-		});
-		const box = el('div', {'aria-label': label, 'aria-roledescription': 'carrossel', class: `carousel carousel-${kind}`, role: 'region'},
+		const dots = el('div', {'aria-label': 'Páginas do carrossel', class: 'carousel-dots', role: 'group'});
+		const box = el('div', {'aria-label': label, 'aria-roledescription': 'carrossel', class: 'carousel', role: 'region'},
 			el('div', {class: 'carousel-stage'}, prev, track, next),
-			bar.node);
-		const step = () => Math.max(track.clientWidth * 0.8, 160);
+			dots);
 		let timer = null;
+		let pages = 0;
 
-		const atEnd = () => track.scrollLeft + track.clientWidth >= track.scrollWidth - 4;
+		const gap = () => parseFloat(getComputedStyle(track).columnGap) || 0;
+		const slideWidth = () => (track.firstElementChild ? track.firstElementChild.offsetWidth + gap() : track.clientWidth);
+		const perView = () => Math.max(1, Math.round((track.clientWidth + gap()) / slideWidth()));
+		const maxLeft = () => Math.max(0, track.scrollWidth - track.clientWidth);
+		const atEnd = () => track.scrollLeft >= maxLeft() - 4;
+		// A página de agora: a do primeiro cartão visível, ou a última quando
+		// a rolagem chegou ao fim.
+		const currentPage = () => (atEnd() ? pages - 1 : Math.floor(Math.round(track.scrollLeft / slideWidth()) / perView()));
+		const pageLeft = (page) => {
+			const first = track.children[Math.min(slides.length - 1, page * perView())];
 
-		function drawArrows() {
-			prev.disabled = track.scrollLeft <= 4;
-			next.disabled = atEnd();
-			bar.draw();
+			return Math.min(maxLeft(), first.offsetLeft - track.firstElementChild.offsetLeft);
+		};
+
+		function go(page) {
+			track.scrollTo({behavior: 'smooth', left: pageLeft(Math.max(0, Math.min(pages - 1, page)))});
 		}
 
-		window.addEventListener('resize', drawArrows, {passive: true});
+		function draw() {
+			const count = Math.ceil(slides.length / perView());
+
+			if (count !== pages) {
+				pages = count;
+				dots.replaceChildren(...Array.from({length: count}, (_, page) => el('button', {
+					'aria-label': `Página ${page + 1} de ${count}`,
+					class: 'carousel-dot',
+					onclick: () => {
+						stop();
+						go(page);
+					},
+					type: 'button',
+				})));
+			}
+
+			const current = currentPage();
+
+			[...dots.children].forEach((dot, page) => {
+				dot.classList.toggle('is-current', page === current);
+				dot.setAttribute('aria-current', page === current ? 'true' : 'false');
+			});
+			dots.hidden = count < 2;
+			prev.disabled = track.scrollLeft <= 4;
+			next.disabled = atEnd();
+		}
 
 		function stop() {
 			if (timer) {
@@ -637,13 +667,14 @@
 
 		prev.addEventListener('click', () => {
 			stop();
-			track.scrollBy({behavior: 'smooth', left: -step()});
+			go(currentPage() - 1);
 		});
 		next.addEventListener('click', () => {
 			stop();
-			track.scrollBy({behavior: 'smooth', left: step()});
+			go(currentPage() + 1);
 		});
-		track.addEventListener('scroll', drawArrows, {passive: true});
+		track.addEventListener('scroll', draw, {passive: true});
+		window.addEventListener('resize', draw, {passive: true});
 
 		for (const type of ['pointerdown', 'wheel', 'keydown', 'focusin', 'touchstart']) {
 			box.addEventListener(type, stop, {passive: true});
@@ -663,101 +694,18 @@
 					return;
 				}
 
-				track.scrollTo({behavior: 'smooth', left: atEnd() ? 0 : track.scrollLeft + step()});
+				if (atEnd()) {
+					track.scrollTo({behavior: 'smooth', left: 0});
+				}
+				else {
+					go(currentPage() + 1);
+				}
 			}, CAROUSEL_EVERY_MS);
 		}
 
-		requestAnimationFrame(drawArrows);
+		requestAnimationFrame(draw);
 
 		return box;
-	}
-
-	// A barra embaixo do carrossel, no lugar da barra de rolagem do
-	// navegador, que fica escondida. Três desenhos para o Eric escolher:
-	//   pontos    um ponto por página; o da página atual é um traço dourado
-	//   linha     um fio fino com um trecho dourado que mostra onde se está
-	//   contador  ‹ 1–4 de 13 › no centro, também no celular
-	// A rolagem continua no dedo, na roda do mouse e nas setas do teclado.
-	function carouselBar(kind, track, total, {go, step}) {
-		const slideBox = () => track.querySelector('.carousel-slide');
-		const perView = () => {
-			const slide = slideBox();
-			const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
-
-			return slide ? Math.max(1, Math.round((track.clientWidth + gap) / (slide.offsetWidth + gap))) : 1;
-		};
-		const maxLeft = () => Math.max(0, track.scrollWidth - track.clientWidth);
-		// O primeiro cartão visível, pela posição da rolagem.
-		const firstShown = () => {
-			const slide = slideBox();
-			const gap = parseFloat(getComputedStyle(track).columnGap) || 0;
-
-			return slide ? Math.min(total - 1, Math.round(track.scrollLeft / (slide.offsetWidth + gap))) : 0;
-		};
-
-		if (kind === 'pontos') {
-			const dots = el('div', {'aria-label': 'Páginas do carrossel', class: 'carousel-dots', role: 'group'});
-			let pages = 0;
-
-			const draw = () => {
-				const view = perView();
-				const count = Math.ceil(total / view);
-
-				if (count !== pages) {
-					pages = count;
-					dots.replaceChildren(...Array.from({length: count}, (_, page) => el('button', {
-						'aria-label': `Página ${page + 1} de ${count}`,
-						class: 'carousel-dot',
-						onclick: () => go(Math.min(maxLeft(), track.children[page * view].offsetLeft - track.children[0].offsetLeft)),
-						type: 'button',
-					})));
-				}
-
-				const current = track.scrollLeft >= maxLeft() - 4 ? count - 1 : Math.floor(firstShown() / view);
-
-				[...dots.children].forEach((dot, page) => {
-					dot.classList.toggle('is-current', page === current);
-					dot.setAttribute('aria-current', page === current ? 'true' : 'false');
-				});
-				dots.hidden = count < 2;
-			};
-
-			return {draw, node: dots};
-		}
-
-		if (kind === 'contador') {
-			const back = el('button', {'aria-label': 'Cartas anteriores', class: 'carousel-count-arrow', onclick: () => step(-1), type: 'button'}, '‹');
-			const forth = el('button', {'aria-label': 'Próximas cartas', class: 'carousel-count-arrow', onclick: () => step(1), type: 'button'}, '›');
-			const text = el('span', {class: 'carousel-count-text'});
-			const node = el('div', {class: 'carousel-count'}, back, text, forth);
-
-			const draw = () => {
-				const first = firstShown();
-				const last = Math.min(total, first + perView());
-
-				text.textContent = last - first > 1 ? `${first + 1}–${last} de ${total}` : `${first + 1} de ${total}`;
-				back.disabled = track.scrollLeft <= 4;
-				forth.disabled = track.scrollLeft >= maxLeft() - 4;
-				node.hidden = maxLeft() <= 4;
-			};
-
-			return {draw, node};
-		}
-
-		// linha
-		const thumb = el('span', {class: 'carousel-line-thumb'});
-		const node = el('div', {'aria-hidden': 'true', class: 'carousel-line'}, thumb);
-
-		const draw = () => {
-			const shown = track.scrollWidth ? track.clientWidth / track.scrollWidth : 1;
-			const at = maxLeft() ? track.scrollLeft / maxLeft() : 0;
-
-			thumb.style.width = `${shown * 100}%`;
-			thumb.style.transform = `translateX(${at * (1 / shown - 1) * 100}%)`;
-			node.hidden = shown >= 0.99;
-		};
-
-		return {draw, node};
 	}
 
 	// ------------------------------------------------------- all cards
