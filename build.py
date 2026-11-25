@@ -705,7 +705,8 @@ sobre = f'''
   </div>
 </div>
 
-<section class="wrap">
+<section>
+  <div class="wrap">
   <div class="story">
     <p class="first">
       A HOTARU começou com a paixão por colecionar cartas. Primeiro foi um binder, depois outro,
@@ -721,6 +722,7 @@ sobre = f'''
       Hoje a HOTARU é uma loja 100% virtual. E para quem quer ir além das cartas, o nosso canal
       do YouTube ensina mais sobre colecionismo.
     </p>
+  </div>
   </div>
 </section>
 
