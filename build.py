@@ -189,6 +189,11 @@ CATALOGO_JS = f'<script src="assets/catalogo.js?v={JS_V}" defer></script>'
 PIX_V = hashlib.sha256((ROOT / "assets/pix.js").read_bytes()).hexdigest()[:10]
 PEDIDO_JS = (f'<script src="assets/pix.js?v={PIX_V}" defer></script>'
              '<script src="assets/vendor/qrcode-generator-1.4.4.min.js" defer></script>')
+# O blog (assets/blog.js, um módulo) só na home e nas páginas do blog. A
+# versão no link segue os dois arquivos; blog-render.js, que ele importa, vem
+# sem versão e pode levar até 10 minutos para atualizar no cache do Pages.
+BLOG_V = hashlib.sha256((ROOT / "assets/blog.js").read_bytes() + (ROOT / "assets/blog-render.js").read_bytes()).hexdigest()[:10]
+BLOG_JS = f'<script type="module" src="assets/blog.js?v={BLOG_V}"></script>'
 
 
 def page(name, title, body, active=None):
@@ -311,6 +316,21 @@ home = f'''
     <div data-catalog="homesealed"></div>
   </div>
 </section>
+
+<section class="cartas-home blog-home" id="blog" hidden>
+  <div class="wrap">
+    <div class="section-head">
+      <div>
+        <p class="eyebrow">Blog</p>
+        <h2>Do blog da HOTARU</h2>
+        <p>Textos sobre Pokémon TCG, coleção e o que mais aparecer por aqui.</p>
+      </div>
+      <a class="more" href="blog.html">Ver todos</a>
+    </div>
+    <div data-blog="home"></div>
+  </div>
+</section>
+{BLOG_JS}
 
 <section class="store" id="sobre">
   <div class="wrap">
@@ -449,20 +469,61 @@ selado = f'''
 page("selado", "Selado — HOTARU", selado, "selados.html")
 print("selado.html")
 
-# A administração dos selados: só para o Eric, sem link no site, fora dos
-# buscadores. O login é o do card tracker (assets/admin.js).
-ADMIN_V = hashlib.sha256((ROOT / "assets/admin.js").read_bytes()).hexdigest()[:10]
-admin = f'''
+# --------------------------------------------------------------------------
+# Blog (lido no navegador por assets/blog.js)
+# --------------------------------------------------------------------------
+
+blog = f'''
 <div class="pagehead">
   <div class="wrap">
-    <h1>Administração</h1>
-    <p>Os produtos selados da loja. As cartas têm preço na tela Shop do card tracker.</p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Blog</p>
+    <h1>Blog</h1>
+    <p>Textos sobre Pokémon TCG, coleção e outros universos.</p>
   </div>
 </div>
 
 <section class="wrap cartas">
+  <div data-blog="list"><p class="card-note" role="status">Carregando os posts…</p></div>
+</section>
+{BLOG_JS}
+'''
+
+page("blog", "Blog — HOTARU", blog, "blog.html")
+print("blog.html")
+
+post = f'''
+<div class="pagehead post-pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="blog.html">Blog</a> &nbsp;/&nbsp; <span data-blog-crumb>Post</span></p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div data-blog="post"><p class="card-note" role="status">Carregando o post…</p></div>
+</section>
+{BLOG_JS}
+'''
+
+page("post", "Blog — HOTARU", post, "blog.html")
+print("post.html")
+
+# A administração dos selados, dos destaques e do blog: só para o Eric, sem
+# link no site, fora dos buscadores. O login é o do card tracker
+# (assets/admin.js). O editor do blog (Quill) só carrega aqui.
+ADMIN_V = hashlib.sha256((ROOT / "assets/admin.js").read_bytes() + (ROOT / "assets/blog-render.js").read_bytes()).hexdigest()[:10]
+admin = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <h1>Administração</h1>
+    <p>Os selados, os destaques e o blog da loja. As cartas têm preço na tela Shop do card tracker.</p>
+  </div>
+</div>
+
+<link rel="stylesheet" href="assets/vendor/quill-2.0.3.snow.css">
+<section class="wrap cartas">
   <div data-admin><p class="card-note" role="status">Abrindo…</p></div>
 </section>
+<script src="assets/vendor/quill-2.0.3.js" defer></script>
 <script type="module" src="assets/admin.js?v={ADMIN_V}"></script>
 '''
 
