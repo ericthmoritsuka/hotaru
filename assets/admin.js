@@ -2,12 +2,18 @@
 // selados, com as próprias fotos (plano do card tracker, plans/hotaru-
 // catalog-plan.md, etapa 4). As cartas continuam na tela Shop do tracker.
 //
-// O login é o do card tracker: os dois sites ficam em ericthmoritsuka.
-// github.io, e o tracker guarda a sessão neste navegador na chave
-// card-tracker-auth. Esta página a usa (a biblioteca do Supabase coordena
-// as abas, então as duas não brigam pela sessão). Sem sessão, ela manda
-// entrar no tracker e voltar. Quem decide se a conta pode cadastrar é o
-// banco (supabase/store-sealed.sql: só o dono do grupo da família).
+// O login é desta página (Eric, 2026-11-25), com a mesma conta do card
+// tracker, no mesmo projeto do Supabase. Antes ela lia a sessão do tracker
+// no navegador, o que só funcionava enquanto os dois sites ficavam em
+// ericthmoritsuka.github.io; com o domínio lojahotaru.com.br, a loja fica
+// em outra origem e não enxerga mais essa sessão. Agora o admin pede um
+// link por e-mail (signInWithOtp, como js/auth.js do tracker), que volta
+// para esta mesma página, e guarda a sessão na chave própria
+// hotaru-admin-auth. shouldCreateUser: false: o link nunca cria conta.
+// O endereço de volta precisa estar em Authentication > URL Configuration
+// > Redirect URLs no Supabase; sem ele, o Supabase manda o link para o
+// tracker. Quem decide se a conta pode cadastrar é o banco
+// (supabase/store-sealed.sql: só o dono do grupo da família).
 //
 // Cada produto tem nome, tipo, idioma, descrição, preço, fotos (a primeira
 // é a capa) e quantos estão à venda agora. As fotos são reduzidas aqui
@@ -25,7 +31,6 @@ import {createClient} from './vendor/supabase-js-2.117.2.js';
 
 const SUPABASE_URL = 'https://ehdkbxrjxsypegbtrxbw.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_Ycfz9bobfuvHWdDKjaoQQA_LDYmm0vJ';
-const TRACKER_SIGNIN = 'https://ericthmoritsuka.github.io/pokemon-card-tracker/signin';
 const BUCKET = 'store';
 const MAX_PHOTOS = 8;
 // Uma foto vira um JPG de até 1600 px no lado maior e menos de 1 MB, o
@@ -41,7 +46,7 @@ const client = createClient(SUPABASE_URL, SUPABASE_KEY, {
 		detectSessionInUrl: false,
 		flowType: 'pkce',
 		persistSession: true,
-		storageKey: 'card-tracker-auth',
+		storageKey: 'hotaru-admin-auth',
 	},
 });
 
@@ -354,7 +359,7 @@ async function showList(notice = '') {
 
 	if (error) {
 		root.replaceChildren(message(error.code === '42501'
-			? 'Esta conta não é a dona da loja. Entre no card tracker com a conta do Eric.'
+			? 'Esta conta não é a dona da loja. Toque em Sair e entre com a conta do Eric.'
 			: error.code === 'PGRST202'
 				? 'A loja ainda não tem selados: rode supabase/store-sealed.sql no Supabase.'
 				: `Não foi possível ler os produtos. ${error.message}`));
@@ -539,7 +544,7 @@ async function showFeatured(notice = '') {
 
 	if (error) {
 		root.replaceChildren(tabs('destaques'), message(error.code === '42501'
-			? 'Esta conta não é a dona da loja. Entre no card tracker com a conta do Eric.'
+			? 'Esta conta não é a dona da loja. Toque em Sair e entre com a conta do Eric.'
 			: error.code === 'PGRST202'
 				? 'Os destaques ainda não existem no banco: rode supabase/store-featured.sql no Supabase.'
 				: `Não foi possível ler os destaques. ${error.message}`));
@@ -1436,7 +1441,7 @@ async function showPosts(notice = '') {
 
 	if (error) {
 		root.replaceChildren(tabs('blog'), message(error.code === '42501'
-			? 'Esta conta não é a dona da loja. Entre no card tracker com a conta do Eric.'
+			? 'Esta conta não é a dona da loja. Toque em Sair e entre com a conta do Eric.'
 			: error.code === 'PGRST202'
 				? 'O blog ainda não existe no banco: rode supabase/store-blog.sql no Supabase.'
 				: `Não foi possível ler os posts. ${error.message}`));
@@ -1473,26 +1478,138 @@ async function showPosts(notice = '') {
 	);
 }
 
+// ------------------------------------------------------------- entrar
+
+// Para onde o link do e-mail volta: esta página, sem busca nem âncora.
+// Vale em ericthmoritsuka.github.io/hotaru/admin.html e em
+// lojahotaru.com.br/admin.html, e cada endereço precisa estar nas Redirect
+// URLs do Supabase.
+const returnUrl = () => new URL('admin.html', window.location.href).href;
+
+// O que o link do e-mail trouxe na URL (?code= do fluxo PKCE, ou um erro),
+// tirado da barra de endereço para que recarregar não use o código de novo
+// (como readAuthReturn em js/auth.js do tracker).
+function readReturn() {
+	const url = new URL(window.location.href);
+	const hash = new URLSearchParams(url.hash.slice(1));
+	const query = url.searchParams;
+	const code = query.get('code');
+	const error = query.get('error_description') || query.get('error')
+		|| hash.get('error_description') || hash.get('error');
+
+	if (!code && !error) {
+		return null;
+	}
+
+	const errorCode = query.get('error_code') || hash.get('error_code');
+
+	for (const key of ['code', 'error', 'error_code', 'error_description']) {
+		query.delete(key);
+	}
+
+	history.replaceState(history.state, '', url.pathname + url.search);
+
+	return {code, error: error ? {code: errorCode, message: error} : null};
+}
+
+function returnProblem(error) {
+	return error && error.code === 'otp_expired'
+		? 'O link expirou ou já foi usado. Peça outro abaixo.'
+		: 'O link não funcionou. Ele vale uma vez só e precisa ser aberto neste mesmo navegador em que foi pedido. Peça outro abaixo.';
+}
+
+function sendProblem(error) {
+	const text = `${error.code || ''} ${error.message || ''}`;
+
+	if (/otp_disabled|signups? not allowed/i.test(text)) {
+		return 'Este e-mail não tem conta no card tracker. Use o mesmo e-mail com que você entra lá.';
+	}
+
+	if (error.status === 429 || /rate.?limit/i.test(text)) {
+		return 'Muitos links pedidos em pouco tempo. Espere um minuto e tente de novo.';
+	}
+
+	return `Não foi possível enviar o link. ${error.message || error}`;
+}
+
+// Sem sessão: pede o e-mail e manda o link. shouldCreateUser: false, então
+// um e-mail sem conta recebe um aviso, e nunca uma conta nova.
+function signInForm(notice) {
+	const email = el('input', {autocomplete: 'email', id: 'admin-email', inputmode: 'email', required: true, type: 'email'});
+	const status = el('p', {'aria-live': 'polite', class: 'admin-status', id: 'admin-status'});
+	const send = el('button', {class: 'btn btn-gold', type: 'submit'}, 'Enviar link');
+	const form = el('form', {class: 'admin-form'},
+		el('h2', null, 'Entrar'),
+		el('p', {class: 'admin-hint'}, 'Use o e-mail da sua conta do card tracker. O link chega por e-mail e precisa ser aberto neste mesmo navegador.'),
+		el('label', {for: 'admin-email'}, 'E-mail'), email,
+		status,
+		el('div', {class: 'admin-actions'}, send)
+	);
+
+	status.textContent = notice || '';
+
+	form.addEventListener('submit', async (event) => {
+		event.preventDefault();
+
+		const address = email.value.trim().toLowerCase();
+
+		if (!address) {
+			status.textContent = 'Escreva o seu e-mail.';
+
+			return;
+		}
+
+		send.disabled = true;
+		status.textContent = 'Enviando…';
+
+		const {error} = await client.auth.signInWithOtp({email: address, options: {emailRedirectTo: returnUrl(), shouldCreateUser: false}});
+
+		send.disabled = false;
+		status.textContent = error
+			? sendProblem(error)
+			: `Link enviado para ${address}. Abra o e-mail neste navegador e toque no link.`;
+	});
+
+	root.replaceChildren(form);
+}
+
+// Sai só desta página: scope local não derruba a sessão do tracker.
+async function signOut() {
+	await client.auth.signOut({scope: 'local'});
+	window.location.replace(returnUrl());
+}
+
 async function start() {
 	if (!root) {
 		return;
 	}
 
+	const back = readReturn();
+	let notice = '';
+
+	if (back && back.error) {
+		notice = returnProblem(back.error);
+	}
+	else if (back && back.code) {
+		const {error} = await client.auth.exchangeCodeForSession(back.code);
+
+		if (error) {
+			notice = returnProblem(error);
+		}
+	}
+
 	const {data} = await client.auth.getSession();
 
 	if (!data || !data.session) {
-		root.replaceChildren(
-			message('Para cadastrar produtos, entre no card tracker neste mesmo navegador e volte aqui.'),
-			el('div', {class: 'admin-actions'},
-				el('a', {class: 'btn btn-gold', href: TRACKER_SIGNIN}, 'Entrar no card tracker'),
-				el('button', {class: 'btn btn-navy', onclick: () => window.location.reload(), type: 'button'}, 'Já entrei')
-			)
-		);
+		signInForm(notice);
 
 		return;
 	}
 
-	root.before(el('p', {class: 'admin-who'}, `Conta: ${data.session.user.email}`));
+	root.before(el('p', {class: 'admin-who'},
+		`Conta: ${data.session.user.email} · `,
+		el('button', {class: 'admin-link', onclick: signOut, type: 'button'}, 'Sair')
+	));
 	await showList();
 }
 
