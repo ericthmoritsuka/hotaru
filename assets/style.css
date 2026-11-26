@@ -947,7 +947,31 @@ section { padding: 76px 0; }
 /* O acabamento que não é o Normal simples (Reverse Holo, Holo...): uma
    etiqueta no canto da foto, para o anúncio não parecer a mesma carta. */
 .finish-tag { max-width: calc(100% - 28px); line-height: 1.3; white-space: normal; }
-.card-detail .finish-tag { top: 18px; left: 18px; font-size: 11px; padding: 7px 12px; }
+.card-detail .finish-tags { top: 18px; left: 18px; max-width: calc(100% - 36px); }
+.card-detail .finish-tags .tag { font-size: 11px; padding: 7px 12px; }
+
+/* O brilho e o carimbo, empilhados no canto da foto (finishTags). */
+.finish-tags {
+  position: absolute;
+  top: 14px;
+  left: 14px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  max-width: calc(100% - 28px);
+}
+.finish-tags .tag { position: relative; top: auto; left: auto; max-width: 100%; }
+
+/* O carimbo: escuro com contorno dourado, para não parecer outro brilho. */
+.stamp-tag {
+  background: rgba(8, 20, 40, 0.88);
+  color: var(--gold-lt);
+  box-shadow: inset 0 0 0 1px rgba(240, 219, 155, 0.55);
+  line-height: 1.3;
+  white-space: normal;
+}
 
 /* Holo e Reverse Holo: a etiqueta é um botão que abre o balão .finish-pop
    (assets/catalogo.js, FINISH_HELP). Fica acima do link esticado do tile. */
