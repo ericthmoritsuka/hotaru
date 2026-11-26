@@ -34,6 +34,10 @@
 // O artista da carta (Eric, 2026-11-24) não está no catálogo: a página da
 // carta o lê no TCGdex, que responde a qualquer site. Se o TCGdex não
 // responder, a linha simplesmente não aparece.
+//
+// A região de cada Pokémon (filtro Região de avulsas.html, 2026-11-26)
+// também vem do TCGdex, pelo número da Pokédex; sem resposta, o filtro não
+// aparece.
 
 (() => {
 	'use strict';
@@ -791,6 +795,167 @@
 		return [...groups.values()];
 	}
 
+	// ------------------------------------------------------------ regions
+
+	// A região de cada Pokémon, para o filtro Região de avulsas.html (pedido
+	// de clientes em 2026-11-26: quem coleciona Kanto não quer procurar set
+	// por set). Mesma regra do card tracker (js/checklists.js, REGIONS e
+	// regionTag): a região sai do número da Pokédex Nacional, e uma forma
+	// regional fica na região da forma, então Exeggutor de Alola é Alola, não
+	// Kanto. Trainers e Energias não têm número nem região.
+	const REGIONS = [
+		{first: 1, id: 'kanto', last: 151, name: 'Kanto'},
+		{first: 152, id: 'johto', last: 251, name: 'Johto'},
+		{first: 252, id: 'hoenn', last: 386, name: 'Hoenn'},
+		{first: 387, id: 'sinnoh', last: 493, name: 'Sinnoh'},
+		{first: 494, id: 'unova', last: 649, name: 'Unova'},
+		{first: 650, id: 'kalos', last: 721, name: 'Kalos'},
+		{first: 722, id: 'alola', last: 809, name: 'Alola'},
+		{first: 810, id: 'galar', last: 898, name: 'Galar'},
+		{first: 899, id: 'hisui', last: 905, name: 'Hisui'},
+		{first: 906, id: 'paldea', last: 1025, name: 'Paldea'},
+	];
+
+	// A forma regional no nome, como o TCGdex escreve em inglês ("Alolan
+	// Vulpix") e em português ("Exeggutor de Alola", "Meowth de Galar").
+	const FORM_NAMES = [
+		[/(^|\s)alolan\s|\sde alola(\s|$)/i, 'alola'],
+		[/(^|\s)galarian\s|\sde galar(\s|$)/i, 'galar'],
+		[/(^|\s)hisuian\s|\sde hisui(\s|$)/i, 'hisui'],
+		[/(^|\s)paldean\s|\sde paldea(\s|$)/i, 'paldea'],
+	];
+
+	// Os ids das regiões de uma carta, pelos números da Pokédex e pelo nome.
+	function regionsOf(dexIds, name) {
+		const ids = (dexIds || []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+
+		if (!ids.length) {
+			return [];
+		}
+
+		const form = FORM_NAMES.find(([pattern]) => pattern.test(String(name || '')));
+
+		if (form) {
+			return [form[1]];
+		}
+
+		return [...new Set(ids.map((n) => REGIONS.find((region) => n >= region.first && n <= region.last)).filter(Boolean).map((region) => region.id))];
+	}
+
+	// Os números da Pokédex vêm do TCGdex, que o catálogo não guarda: uma
+	// consulta GraphQL por coleção traz os da coleção inteira, como o card
+	// tracker faz (js/catalog.js, cardDetailsQuery). A resposta fica neste
+	// navegador por uma semana, e a coleção é lida de novo antes disso só
+	// quando falta nela uma carta à venda (o TCGdex completa uma coleção nova
+	// aos poucos). Só o catálogo internacional, o único que a loja vende
+	// hoje; uma carta de outro catálogo fica sem região.
+	const DEX_KEY = 'hotaru.dex';
+	const DEX_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+	const TCGDEX_GRAPHQL = `${TCGDEX}/graphql`;
+
+	const setIdOf = (cardId) => {
+		const cut = String(cardId).lastIndexOf('-');
+
+		return cut > 0 ? String(cardId).slice(0, cut) : null;
+	};
+
+	function readDexCache() {
+		try {
+			const value = JSON.parse(localStorage.getItem(DEX_KEY) || '{}');
+
+			return value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+		}
+		catch {
+			return {};
+		}
+	}
+
+	function writeDexCache(cache) {
+		try {
+			localStorage.setItem(DEX_KEY, JSON.stringify(cache));
+		}
+		catch {
+			// Navegador sem espaço ou em modo privado: lê de novo na próxima.
+		}
+	}
+
+	// {id da carta: [números]} de uma coleção. Lança quando o TCGdex falha.
+	async function readSetDex(setId) {
+		const query = `{ cards(filters: {id: ${JSON.stringify(`${setId}-`)}}, pagination: {page: 1, itemsPerPage: 1000}) { id dexId } }`;
+		const response = await fetch(TCGDEX_GRAPHQL, {body: JSON.stringify({query}), headers: {'content-type': 'application/json'}, method: 'POST'});
+
+		if (!response.ok) {
+			throw new Error(`TCGdex ${response.status}`);
+		}
+
+		const body = await response.json();
+		const cards = body && body.data && Array.isArray(body.data.cards) ? body.data.cards : null;
+
+		if (!cards) {
+			throw new Error('TCGdex sem dados');
+		}
+
+		const out = {};
+
+		// O filtro de id acha qualquer id que contenha o texto, então a
+		// coleção exata é conferida.
+		for (const card of cards) {
+			if (card && typeof card.id === 'string' && setIdOf(card.id) === setId) {
+				out[card.id] = Array.isArray(card.dexId) ? card.dexId.filter(Number.isInteger) : [];
+			}
+		}
+
+		return out;
+	}
+
+	// Põe group.regions (ids) em cada carta do catálogo internacional.
+	// Resolve true quando ao menos uma coleção respondeu.
+	async function addRegions(groups) {
+		const cache = readDexCache();
+		const now = Date.now();
+		const bySet = new Map();
+
+		for (const group of groups) {
+			const setId = group.catalog === 'international' ? setIdOf(group.cardId) : null;
+
+			if (setId) {
+				bySet.set(setId, [...(bySet.get(setId) || []), group]);
+			}
+		}
+
+		let answered = false;
+
+		await Promise.all([...bySet].map(async ([setId, members]) => {
+			const saved = cache[setId];
+			const fresh = saved && saved.cards && now - Number(saved.at || 0) < DEX_KEEP_MS && members.every((group) => Object.hasOwn(saved.cards, group.cardId));
+
+			if (!fresh) {
+				try {
+					cache[setId] = {at: now, cards: await readSetDex(setId)};
+				}
+				catch {
+					// Sem rede ou TCGdex fora do ar: usa o que estiver guardado.
+				}
+			}
+
+			const cards = cache[setId] && cache[setId].cards;
+
+			if (!cards) {
+				return;
+			}
+
+			answered = true;
+
+			for (const group of members) {
+				group.regions = regionsOf(cards[group.cardId], group.name);
+			}
+		}));
+
+		writeDexCache(cache);
+
+		return answered;
+	}
+
 	const cardHref = (group) => `carta.html?c=${encodeURIComponent(group.cardId)}&l=${encodeURIComponent(group.language)}${group.finish ? `&a=${encodeURIComponent(group.finish)}` : ''}`;
 
 	// O nome da carta com o acabamento, quando não é o Normal simples.
@@ -1139,6 +1304,9 @@
 		const search = el('input', {'aria-label': 'Buscar cartas', class: 'card-search', placeholder: 'Buscar por nome ou coleção', type: 'search'});
 		const setSelect = el('select', {'aria-label': 'Coleção'}, el('option', {value: ''}, 'Todas as coleções'), sets.map((name) => el('option', {value: name}, name)));
 		const languageSelect = el('select', {'aria-label': 'Idioma'}, el('option', {value: ''}, 'Todos os idiomas'), languages.map((code) => el('option', {value: code}, languageName(code))));
+		// Região aparece quando o TCGdex responde (addRegions); até lá, e se
+		// ele não responder, a página fica como era.
+		const regionSelect = el('select', {'aria-label': 'Região', class: 'card-region', hidden: true}, el('option', {value: ''}, 'Todas as regiões'));
 		const sortSelect = el('select', {'aria-label': 'Ordenar'},
 			el('option', {value: 'set'}, 'Por coleção'),
 			el('option', {value: 'price-asc'}, 'Menor preço'),
@@ -1165,6 +1333,7 @@
 			const shown = groups
 				.filter((group) => (!setSelect.value || group.setName === setSelect.value)
 					&& (!languageSelect.value || group.language === languageSelect.value)
+					&& (!regionSelect.value || (group.regions || []).includes(regionSelect.value))
 					&& words.every((word) => group.search.includes(word)))
 				.sort(SORTS[sortSelect.value] || SORTS.set);
 
@@ -1172,7 +1341,7 @@
 			grid.replaceChildren(...(shown.length ? shown.map(tile) : [message('Nenhuma carta com esses filtros.')]));
 		}
 
-		for (const control of [search, setSelect, languageSelect, sortSelect]) {
+		for (const control of [search, setSelect, languageSelect, regionSelect, sortSelect]) {
 			control.addEventListener(control === search ? 'input' : 'change', draw);
 		}
 
@@ -1192,7 +1361,7 @@
 			count.scrollIntoView({behavior: 'smooth', block: 'start'});
 		};
 		const picks = featuredCards(groups, featured);
-		const filters = el('div', {class: 'card-filters'}, search, setSelect, languageSelect, sortSelect);
+		const filters = el('div', {class: 'card-filters'}, search, setSelect, languageSelect, regionSelect, sortSelect);
 
 		root.replaceChildren(
 			picks.length ? featuredBand(picks.map((pick) => pickTile(pick, {onOpen: openSet})), 'Em destaque') : '',
@@ -1200,6 +1369,43 @@
 			filters, count, grid
 		);
 		draw();
+
+		// Com as regiões lidas: o filtro oferece só as regiões que têm carta
+		// à venda, com quantas são, a busca também acha "kanto", e
+		// avulsas.html?regiao=kanto abre já filtrada.
+		addRegions(groups).then((answered) => {
+			const counts = new Map();
+
+			for (const group of groups) {
+				for (const id of group.regions || []) {
+					counts.set(id, (counts.get(id) || 0) + 1);
+				}
+			}
+
+			if (!answered || !counts.size || !regionSelect.isConnected) {
+				return;
+			}
+
+			for (const group of groups) {
+				const names = (group.regions || []).map((id) => REGIONS.find((region) => region.id === id).name);
+
+				if (names.length) {
+					group.search = `${group.search} ${fold(names.join(' '))}`;
+				}
+			}
+
+			regionSelect.append(...REGIONS.filter((region) => counts.has(region.id)).map((region) => el('option', {value: region.id}, `${region.name} (${counts.get(region.id)})`)));
+
+			const wantedRegion = new URLSearchParams(window.location.search).get('regiao');
+
+			if (wantedRegion && counts.has(wantedRegion)) {
+				regionSelect.value = wantedRegion;
+			}
+
+			regionSelect.hidden = false;
+			filters.classList.add('has-region');
+			draw();
+		});
 	}
 
 	// -------------------------------------------------------- one card
