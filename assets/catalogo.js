@@ -145,25 +145,62 @@
 
 	const finishKind = (finish) => (/\breverse\b/i.test(finish || '') ? 'reverse' : /\bholo\b/i.test(finish || '') ? 'holo' : null);
 
-	// A etiqueta fica no canto da foto, como as do resto do site (.tag).
-	function finishTag(group) {
-		if (plainFinish(group.finish)) {
-			return null;
-		}
+	// O carimbo é outra coisa que o brilho (Eric, 2026-11-26), e ganha a
+	// sua própria etiqueta. Toda carta de uma coleção carimbada tem o
+	// carimbo, mas o tracker só o escreve no acabamento quando a cópia
+	// aponta para a variante do TCGdex (as comuns e raras Holo dos 30 anos
+	// chegam como "Holo"); por isso a coleção decide, e o carimbo escrito
+	// no acabamento também conta.
+	const STAMPED_SETS = {'30th': '30 anos'};
+	const STAMP_PART = /\bstamp\b|^carimbo\b/i;
+	const finishParts = (finish) => String(finish || '').split(',').map((part) => part.trim()).filter(Boolean);
 
-		const kind = finishKind(group.finish);
+	// O brilho: o acabamento sem os carimbos ("Holo, carimbo de 30 anos" é
+	// Holo).
+	const shineName = (finish) => finishParts(finish).filter((part) => !STAMP_PART.test(part)).join(', ') || null;
+
+	// O brilho como a página o escreve: nada no Normal simples.
+	const shownShine = (finish) => (plainFinish(shineName(finish)) ? null : shineName(finish));
+
+	function stampNames(cardId, finish) {
+		const names = finishParts(finish).filter((part) => STAMP_PART.test(part)).map((part) => part.replace(/^carimbo de /i, ''));
+		const set = STAMPED_SETS[String(cardId || '').replace(/-[^-]*$/, '')];
+
+		return [...new Set(set ? [...names, set] : names)];
+	}
+
+	// "Stamp 30 anos", como os colecionadores falam, e curto para caber
+	// numa linha no tile do celular ("Carimbo de 30 anos" quebrava; Eric,
+	// 2026-11-26).
+	const stampLabel = (name) => (/\bstamp\b/i.test(name) ? name : `Stamp ${name}`);
+
+	// A etiqueta do brilho, com o balão em Holo e Reverse Holo.
+	function shineTag(shine) {
+		const kind = finishKind(shine);
 
 		if (!kind) {
-			return el('span', {class: 'tag foil finish-tag'}, group.finish);
+			return el('span', {class: 'tag foil finish-tag'}, shine);
 		}
 
 		return el('button', {
 			'aria-expanded': 'false',
-			'aria-label': `${group.finish}: o que é?`,
+			'aria-label': `${shine}: o que é?`,
 			class: 'tag foil finish-tag finish-tag-help',
 			'data-finish-kind': kind,
 			type: 'button',
-		}, group.finish, el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'));
+		}, shine, el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'));
+	}
+
+	// As etiquetas ficam no canto da foto, como as do resto do site (.tag):
+	// o brilho em cima, o stamp embaixo.
+	function finishTags(group) {
+		const shine = shownShine(group.finish);
+		const tags = [
+			shine ? shineTag(shine) : null,
+			...stampNames(group.cardId, group.finish).map((name) => el('span', {class: 'tag stamp-tag'}, stampLabel(name))),
+		].filter(Boolean);
+
+		return tags.length ? el('div', {class: 'finish-tags'}, tags) : null;
 	}
 
 	// O mesmo balão onde o acabamento aparece como texto (a ficha e as
@@ -610,7 +647,7 @@
 	const cardHref = (group) => `carta.html?c=${encodeURIComponent(group.cardId)}&l=${encodeURIComponent(group.language)}${group.finish ? `&a=${encodeURIComponent(group.finish)}` : ''}`;
 
 	// O nome da carta com o acabamento, quando não é o Normal simples.
-	const fullName = (group) => (plainFinish(group.finish) ? group.name : `${group.name} (${group.finish})`);
+	const fullName = (group) => (shownShine(group.finish) ? `${group.name} (${shownShine(group.finish)})` : group.name);
 
 	const available = (n) => (n === 1 ? '1 disponível' : `${n} disponíveis`);
 
@@ -625,8 +662,8 @@
 		// No tile, a etiqueta fica fora do link da foto, irmã dele no
 		// article (.card-item, que a posiciona), porque ela pode ser um botão.
 		return link
-			? [finishTag(group), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner)]
-			: el('div', {class: 'shot card-shot'}, finishTag(group), inner);
+			? [finishTags(group), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner)]
+			: el('div', {class: 'shot card-shot'}, finishTags(group), inner);
 	}
 
 	// O carrinho direto da grade (Eric, 2026-11-24): uma carta cujas cópias
@@ -694,7 +731,7 @@
 			shot(group),
 			el('div', {class: 'meta'},
 				el('span', {class: 'kind'}, group.featured ? featuredMark() : null, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
-				el('h3', null, el('a', {'aria-label': plainFinish(group.finish) ? null : fullName(group), href: cardHref(group)}, group.name)),
+				el('h3', null, el('a', {'aria-label': shownShine(group.finish) ? fullName(group) : null, href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
 				el('div', {class: 'card-foot'},
@@ -706,7 +743,7 @@
 	}
 
 	const mailto = (group) => {
-		const what = `${group.name} (${[setLine(group), languageName(group.language), plainFinish(group.finish) ? null : group.finish].filter(Boolean).join(', ')})`;
+		const what = `${group.name} (${[setLine(group), languageName(group.language), shownShine(group.finish), ...stampNames(group.cardId, group.finish).map(stampLabel)].filter(Boolean).join(', ')})`;
 		const subject = `Quero a carta ${what}`;
 		const body = `Olá, Eric!\n\nTenho interesse na carta ${what}, por ${brl(group.price)}.\n\nQuantidade: 1\n\nNome:\n`;
 
@@ -973,7 +1010,7 @@
 		};
 
 		for (const group of groups) {
-			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish].filter(Boolean).join(' '));
+			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish, ...stampNames(group.cardId, group.finish).map(stampLabel)].filter(Boolean).join(' '));
 		}
 
 		function draw() {
@@ -1048,7 +1085,8 @@
 			['Idioma', languageName(group.language)],
 			['Raridade', group.rarity],
 			['Estado', [...group.conditions].join(', ')],
-			['Acabamento', group.finish ? [group.finish, finishHelp(group.finish)] : null],
+			['Acabamento', group.finish ? [shineName(group.finish) || 'Normal', finishHelp(shineName(group.finish))] : null],
+			['Stamp', stampNames(group.cardId, group.finish).join(', ')],
 			['Disponível', available(group.copies.length)],
 		].filter(([, value]) => value);
 
@@ -1083,8 +1121,8 @@
 		return el('div', {class: 'other-finishes'},
 			el('p', {class: 'other-finishes-title'}, 'Também à venda'),
 			el('ul', null, others.map((one) => el('li', null,
-				el('a', {href: cardHref(one)}, one.finish || 'Normal'),
-				finishHelp(one.finish),
+				el('a', {href: cardHref(one)}, shineName(one.finish) || 'Normal'),
+				finishHelp(shineName(one.finish)),
 				` · ${brl(one.price)} · ${available(one.copies.length)}`
 			)))
 		);
@@ -1116,7 +1154,7 @@
 			}
 
 			const lines = [...variants.values()].map(({free, row, total}) => {
-				const finish = row.finish ? finishName(row.finish) : null;
+				const finish = row.finish ? shineName(finishName(row.finish)) : null;
 				const label = [row.condition, finish].filter(Boolean).join(' · ') || 'Cópia';
 				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
 					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
@@ -1571,7 +1609,7 @@
 						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
 						el('p', {class: 'cart-meta'}, item.kind === 'kit'
 							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
-							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish], item.finish)),
+							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, shineName(item.finish), ...stampNames(item.cardId, item.finish).map(stampLabel)], shineName(item.finish))),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
@@ -2335,7 +2373,7 @@
 			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
 			el('div', null,
 				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
-				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, plainFinish(item.finish) ? null : item.finish], item.finish)),
+				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, shownShine(item.finish), ...stampNames(item.cardId, item.finish).map(stampLabel)], shownShine(item.finish))),
 				el('p', {class: 'kit-card-alone'}, `Separada: ${brl(item.price)}`)))));
 
 		root.replaceChildren(el('div', {class: 'card-detail kit-detail'},
