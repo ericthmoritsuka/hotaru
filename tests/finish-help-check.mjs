@@ -3,8 +3,10 @@
 // served from this folder and a stand-in for the Supabase calls. Nothing
 // touches the real project.
 //
-// Covers: a Holo or Reverse Holo tag is a button and other finishes stay a
-// plain tag; every 30 anos card carries its own one-line Stamp tag, apart
+// Covers: every badge the tracker can publish for Eric's cards (Poké Ball,
+// Master Ball and Cosmos patterns, 1ª Edição, Shadowless, Unlimited, Stamp
+// 25 and 30 anos, Promo, Jumbo) gets its community name and, but Jumbo, its
+// own explainer; a Holo or Reverse Holo tag is a button; every 30 anos card carries its own one-line Stamp tag, apart
 // from the shine tag, with its own explainer showing the real stamp, and
 // the card page and the cart list them apart; tapping a tag on
 // a phone opens the explainer without opening the card, with the right
@@ -41,6 +43,16 @@ const CATALOG = [
 	listing('c-cha', 'base1-4', 'Charmander', '046', '1st edition', {price_brl: 20}),
 	listing('c-hoh', '30th-012', 'Ho-Oh', '012', 'Holo', {in_kit: true}),
 	listing('c-pik', '30th-025', 'Pikachu', '025', 'Normal', {in_kit: true}),
+	// The rest of the badges the tracker can publish for the cards Eric owns
+	// (research of 2026-11-26), as js/prices.js finishName writes them.
+	listing('c-exe', 'sv08.5-001', 'Exeggcute', '001', 'Reverse holo, Poké Ball pattern'),
+	listing('c-exu', 'sv08.5-002', 'Exeggutor', '002', 'Reverse holo, Master Ball pattern'),
+	listing('c-cot', 'mep-018', 'Cottonee', '018', 'Holo, Cosmos foil', {rarity: 'Promo'}),
+	listing('c-kof', 'base1-51', 'Koffing', '051', 'Normal, Shadowless, 1st Edition stamp'),
+	listing('c-mac', 'base1-34', 'Machoke', '034', 'Unlimited'),
+	listing('c-mol', 'base3-27', 'Moltres', '027', '1st Edition'),
+	listing('c-zam', 'cel25-18', 'Zamazenta V', '018', 'Holo'),
+	listing('c-dra', 'sv06-130', 'Dragapult ex', '130', 'Holo, Jumbo'),
 ];
 
 const KIT = '11111111-2222-4333-8444-555555555555';
@@ -147,7 +159,7 @@ try {
 	await check('Holo and Reverse Holo tags are buttons; other finishes stay a plain tag', async () => {
 		assert.equal(await tileTag(page, 'Lugia').evaluate((node) => node.tagName), 'BUTTON');
 		assert.equal(await tileTag(page, 'Mew ex').evaluate((node) => node.tagName), 'BUTTON');
-		assert.equal(await tileTag(page, 'Charmander').evaluate((node) => node.tagName), 'SPAN');
+		assert.equal(await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Dragapult ex'})}).locator('.finish-tags .tag', {hasText: 'Jumbo'}).evaluate((node) => node.tagName), 'SPAN', 'Jumbo has no explainer');
 		assert.equal(await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Luxray'})}).count(), 2);
 		assert.equal(await page.locator('.card-shot .finish-tag-help').count(), 0, 'no button inside the photo link');
 	});
@@ -184,14 +196,14 @@ try {
 		assert.deepEqual((await page.locator('.card-detail .finish-tags .tag').allTextContents()).map(plain), ['Holo?', 'Stamp 30 anos?']);
 		assert.equal((await page.title()).includes('carimbo'), false, 'the page title drops the stamp');
 
-		await page.locator('.card-facts .finish-help[data-finish-kind="stamp"]').tap();
+		await page.locator('.card-facts .finish-help[data-finish-kind="stamp30"]').tap();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Stamp 30 anos');
 		await page.locator('h1').tap();
 		await page.locator('.buy-box .buy-add').first().tap();
 		await page.goto(`${ORIGIN}/pedido.html`);
 
-		const cartStamp = page.locator('.cart-meta .finish-help[data-finish-kind="stamp"]');
+		const cartStamp = page.locator('.cart-meta .finish-help[data-finish-kind="stamp30"]');
 
 		await cartStamp.waitFor();
 		await cartStamp.tap();
@@ -205,7 +217,7 @@ try {
 	await check('the Stamp 30 anos tag opens its own explainer with the real stamp', async () => {
 		const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Lugia'})}).first().locator('.stamp-tag');
 
-		assert.equal(await tag.getAttribute('data-finish-kind'), 'stamp');
+		assert.equal(await tag.getAttribute('data-finish-kind'), 'stamp30');
 		await tag.scrollIntoViewIfNeeded();
 		await tag.tap();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
@@ -239,8 +251,146 @@ try {
 		await page.setViewportSize({height: 844, width: 390});
 	});
 
+	await check('each badge the tracker can publish gets its community name', async () => {
+		const texts = async (name) => (await page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag').allTextContents()).map(plain);
+		const expected = {
+			Charmander: ['1ª Edição?'],
+			Cottonee: ['Cosmos Holo?', 'Promo?'],
+			'Dragapult ex': ['Holo?', 'Jumbo'],
+			Exeggcute: ['Poké Ball Reverse Holo?'],
+			Exeggutor: ['Master Ball Reverse Holo?'],
+			Koffing: ['Shadowless?', '1ª Edição?'],
+			Machoke: ['Unlimited?'],
+			Moltres: ['1ª Edição?'],
+			'Zamazenta V': ['Holo?', 'Stamp 25 anos?'],
+		};
+
+		for (const [name, tags] of Object.entries(expected)) {
+			assert.deepEqual(await texts(name), tags, name);
+		}
+
+		assert.equal(await page.locator('.finish-tags').filter({hasText: /pattern|foil|anniversary|edition|Sem sombra|Ilimitada/i}).count(), 0, 'no tracker words left');
+
+		if (SHOTS) {
+			await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Exeggcute'})}).first().scrollIntoViewIfNeeded();
+			await page.screenshot({path: join(SHOTS, 'phone-patterns.png')});
+		}
+	});
+
+	await check('each new badge opens its own explainer', async () => {
+		const open = async (name, label) => {
+			const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag', {hasText: label});
+
+			await tag.scrollIntoViewIfNeeded();
+			await tag.tap();
+			await page.locator('#finish-pop').waitFor({state: 'visible'});
+			await insideScreen(page, `${name} ${label}`);
+		};
+		const title = async () => plain(await page.locator('.finish-pop-title').textContent());
+		const text = async () => plain(await page.locator('.finish-pop-text').textContent());
+		const current = async () => plain(await page.locator('.finish-mini.is-current figcaption').textContent());
+		const picture = async (src, width) => {
+			await page.waitForFunction(() => document.querySelector('.finish-pop-stamp')?.complete);
+			assert.match(await page.locator('.finish-pop-stamp').getAttribute('src'), new RegExp(src));
+			assert.equal(await page.locator('.finish-pop-stamp').evaluate((img) => img.naturalWidth), width, `${src} loads`);
+		};
+		const shut = async () => {
+			await page.locator('h1').tap();
+			assert.ok(await page.locator('#finish-pop').isHidden());
+		};
+
+		await open('Exeggcute', 'Poké Ball');
+		assert.equal(await title(), 'Poké Ball Reverse Holo');
+		assert.match(await text(), /^O brilho tem o desenho de várias Poké Balls.*O brilho fica em volta/);
+		assert.equal(await current(), 'Reverse Holo');
+		await shut();
+
+		await open('Exeggutor', 'Master Ball');
+		assert.equal(await title(), 'Master Ball Reverse Holo');
+		assert.match(await text(), /Master Balls/);
+		await shut();
+
+		await open('Cottonee', 'Cosmos');
+		assert.equal(await title(), 'Cosmos Holo');
+		assert.match(await text(), /^O brilho tem o padrão Cosmos.*brilho holográfico/);
+		assert.equal(await current(), 'Holo');
+		await shut();
+
+		await open('Cottonee', 'Promo');
+		assert.equal(await title(), 'Promo');
+		assert.match(await text(), /estrela preta escrita PROMO/);
+		await picture('promo-estrela', 448);
+
+		if (SHOTS) {
+			await page.screenshot({path: join(SHOTS, 'phone-promo.png')});
+		}
+
+		await shut();
+
+		await open('Moltres', '1ª Edição');
+		assert.equal(await title(), '1ª Edição');
+		await picture('primeira-edicao', 280);
+		await shut();
+
+		await open('Koffing', 'Shadowless');
+		assert.equal(await title(), 'Shadowless');
+		assert.deepEqual((await page.locator('.finish-mini figcaption').allTextContents()).map(plain), ['Shadowless', 'Unlimited']);
+		assert.equal(await current(), 'Shadowless');
+
+		if (SHOTS) {
+			await page.screenshot({path: join(SHOTS, 'phone-shadowless.png')});
+		}
+
+		await shut();
+
+		await open('Machoke', 'Unlimited');
+		assert.equal(await current(), 'Unlimited');
+		await shut();
+
+		await open('Zamazenta V', 'Stamp 25 anos');
+		assert.equal(await title(), 'Stamp 25 anos');
+		assert.match(await text(), /2 e 5 nas bochechas/);
+		await picture('stamp-25-anos', 280);
+
+		if (SHOTS) {
+			await page.screenshot({path: join(SHOTS, 'phone-stamp25.png')});
+		}
+
+		await shut();
+	});
+
+	await check('the card page lists edition, promo, and pattern apart, each with its ?', async () => {
+		await page.goto(`${ORIGIN}/carta.html?c=base1-51&l=pt&a=${encodeURIComponent('Normal, Shadowless, 1st Edition stamp')}`);
+		await page.locator('.card-facts').waitFor();
+
+		let facts = plain(await page.locator('.card-facts').textContent());
+
+		assert.match(facts, /Acabamento ?Normal/);
+		assert.match(facts, /Edição ?Shadowless\?, 1ª Edição\?/);
+		assert.equal(await page.locator('.card-facts .finish-help').count(), 2);
+
+		await page.goto(`${ORIGIN}/carta.html?c=mep-018&l=pt&a=${encodeURIComponent('Holo, Cosmos foil')}`);
+		await page.locator('.card-facts').waitFor();
+		facts = plain(await page.locator('.card-facts').textContent());
+		assert.match(facts, /Raridade ?Promo\?/);
+		assert.match(facts, /Acabamento ?Cosmos Holo\?/);
+		assert.match(plain(await page.locator('.buy-label').first().textContent()), /^Near Mint · Cosmos Holo\?/);
+
+		await page.locator('.card-facts .finish-help[data-finish-kind="promo"]').tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Promo');
+		await page.locator('h1').tap();
+
+		await page.goto(`${ORIGIN}/carta.html?c=sv06-130&l=pt&a=${encodeURIComponent('Holo, Jumbo')}`);
+		await page.locator('.card-facts').waitFor();
+		assert.match(plain(await page.locator('.card-facts').textContent()), /Tamanho ?Jumbo/);
+
+		await page.goto(`${ORIGIN}/avulsas.html`);
+		await page.locator('.card-item h3', {hasText: 'Lugia'}).first().waitFor();
+	});
+
 	await check('tapping a Reverse Holo tag opens the explainer and stays on the page', async () => {
-		const tag = page.locator('.card-item .finish-tag-help[data-finish-kind="reverse"]').first();
+		const tag = page.locator('.card-item .finish-tag-help[data-finish-kind="reverse"]:not([data-pattern])').first();
 
 		await tag.scrollIntoViewIfNeeded();
 		await tag.tap();
@@ -259,7 +409,7 @@ try {
 	});
 
 	await check('tapping the same tag again closes it; a tap outside closes it', async () => {
-		const tag = page.locator('.card-item .finish-tag-help[data-finish-kind="reverse"]').first();
+		const tag = page.locator('.card-item .finish-tag-help[data-finish-kind="reverse"]:not([data-pattern])').first();
 
 		await tag.tap();
 		assert.ok(await page.locator('#finish-pop').isHidden());
@@ -369,7 +519,7 @@ try {
 
 		await kitHelp.waitFor();
 		assert.equal(await kitHelp.count(), 1, 'only the Holo card in the kit');
-		assert.equal(await page.locator('.kit-card-meta .finish-help[data-finish-kind="stamp"]').count(), 2, 'both 30 anos cards in the kit');
+		assert.equal(await page.locator('.kit-card-meta .finish-help[data-finish-kind="stamp30"]').count(), 2, 'both 30 anos cards in the kit');
 		await kitHelp.scrollIntoViewIfNeeded();
 		await kitHelp.tap();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});

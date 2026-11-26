@@ -1036,6 +1036,14 @@ section { padding: 76px 0; }
 .finish-pop-cards { display: flex; justify-content: center; gap: 22px; }
 .finish-pop-stamp { display: block; width: 100%; height: auto; border-radius: 8px; }
 
+/* Shadowless e Unlimited: a mesma cartinha, com moldura amarela como as
+   primeiras coleções, e a sombra à direita da ilustração só na Unlimited. */
+.finish-mini-shadowless .finish-mini-card,
+.finish-mini-unlimited .finish-mini-card { background: #f3d34a; }
+.finish-mini-shadowless .finish-mini-art,
+.finish-mini-unlimited .finish-mini-art { box-shadow: inset 0 0 0 2px #c9a227; }
+.finish-mini-unlimited .finish-mini-art { box-shadow: inset 0 0 0 2px #c9a227, 5px 4px 0 rgba(8, 20, 40, 0.8); }
+
 /* O "?" do Stamp 30 anos: claro, porque a etiqueta é escura. */
 .stamp-tag .finish-tag-i { background: var(--gold-lt); color: var(--navy-deep); }
 
