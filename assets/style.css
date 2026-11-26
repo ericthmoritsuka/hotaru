@@ -977,6 +977,23 @@ section { padding: 76px 0; }
   letter-spacing: 0;
 }
 
+/* O "?" ao lado do acabamento escrito como texto (finishHelp). */
+.finish-help {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  margin: 0 0 0 5px;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: 600 11px/1 var(--sans);
+  vertical-align: 0.1em;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.finish-help::before { content: ""; position: absolute; inset: -10px; }
+.finish-help:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; border-radius: 50%; }
+
 .finish-pop {
   position: fixed;
   z-index: 60;

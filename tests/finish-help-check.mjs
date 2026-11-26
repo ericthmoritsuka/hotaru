@@ -7,7 +7,8 @@
 // plain tag; tapping a tag on a phone opens the explainer without opening the
 // card, with the right title and the right drawn card highlighted, inside the
 // screen; tapping it again, tapping outside, and Escape close it; the card
-// page's tag; the home carousel; hover on a desktop; no sideways scrolling.
+// page's tag, facts row, Também à venda, and buy line; the cart; the kit
+// page; the home carousel; hover on a desktop; no sideways scrolling.
 //
 // Run: python3 build.py && PLAYWRIGHT=/path/to/node_modules/playwright node tests/finish-help-check.mjs [screenshot-folder]
 
@@ -35,7 +36,24 @@ const CATALOG = [
 	listing('c-lux-n', 'me03-028', 'Luxray', '028', 'Normal', {price_brl: 3}),
 	listing('c-mew', '30th-158', 'Mew ex', '158', 'Holo, 30th anniversary stamp', {price_brl: 50}),
 	listing('c-cha', 'base1-4', 'Charmander', '046', '1st edition', {price_brl: 20}),
+	listing('c-hoh', '30th-012', 'Ho-Oh', '012', 'Holo', {in_kit: true}),
+	listing('c-pik', '30th-025', 'Pikachu', '025', 'Normal', {in_kit: true}),
 ];
+
+const KIT = '11111111-2222-4333-8444-555555555555';
+const kitRow = () => ({
+	description: null,
+	discount_pct: 10,
+	id: KIT,
+	items: ['c-hoh', 'c-pik'].map((id) => {
+		const row = CATALOG.find((one) => one.id === id);
+
+		return {card_id: row.card_id, condition: row.condition, finish: row.finish, image_path: row.image_path, language: 'pt', listing_id: id, name: row.name, number: row.number, price_brl: 10, set_name: row.set_name};
+	}),
+	name: 'Dupla dos 30 anos',
+	price: 18,
+	sum: 20,
+});
 
 function startServer() {
 	const child = spawn('python3', ['-m', 'http.server', String(PORT), '--bind', '127.0.0.1'], {cwd: ROOT, stdio: 'ignore'});
@@ -71,6 +89,10 @@ async function open(browser, viewport) {
 
 		if (name === 'store_catalog') {
 			return json(CATALOG);
+		}
+
+		if (name === 'store_bundles') {
+			return json([kitRow()]);
 		}
 
 		if (name === 'listing_status') {
@@ -197,6 +219,73 @@ try {
 		if (SHOTS) {
 			await page.screenshot({path: join(SHOTS, 'phone-card-page.png')});
 		}
+	});
+
+	await check('on the card page, the facts row, Também à venda, and the buy line each open it', async () => {
+		await page.goto(`${ORIGIN}/carta.html?c=me03-028&l=pt&a=Normal`);
+		await page.locator('.card-facts').waitFor();
+		assert.equal(await page.locator('.card-facts .finish-help').count(), 0, 'Normal has no explainer');
+		assert.equal(await page.locator('.buy-box .finish-help').count(), 0, 'Normal buy line has no explainer');
+
+		const other = page.locator('.other-finishes .finish-help');
+
+		assert.equal(await other.count(), 1);
+		await other.tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Reverse Holo');
+		assert.equal(new URL(page.url()).search, '?c=me03-028&l=pt&a=Normal', 'the ? beside the link does not follow it');
+		await insideScreen(page, 'Também à venda');
+
+		await page.goto(`${ORIGIN}/carta.html?c=me03-028&l=pt&a=${encodeURIComponent('Reverse Holo')}`);
+
+		for (const where of ['.card-facts', '.buy-box']) {
+			const help = page.locator(`${where} .finish-help`);
+
+			await help.waitFor();
+			await help.scrollIntoViewIfNeeded();
+			await help.tap();
+			await page.locator('#finish-pop').waitFor({state: 'visible'});
+			assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Reverse Holo', where);
+			await insideScreen(page, where);
+			await page.locator('h1').tap();
+			assert.ok(await page.locator('#finish-pop').isHidden(), `${where}: closes on a tap outside`);
+		}
+
+		if (SHOTS) {
+			await page.locator('.card-facts .finish-help').tap();
+			await page.screenshot({path: join(SHOTS, 'phone-card-facts.png')});
+			await page.locator('h1').tap();
+		}
+
+		await noSideways(page, 'card page');
+	});
+
+	await check('the cart and the kit page open it beside a Holo finish', async () => {
+		await page.locator('.buy-box .buy-add').first().tap();
+		await page.goto(`${ORIGIN}/pedido.html`);
+
+		const cartHelp = page.locator('.cart-meta .finish-help');
+
+		await cartHelp.waitFor();
+		await cartHelp.tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Reverse Holo');
+		await insideScreen(page, 'cart');
+		await noSideways(page, 'cart');
+
+		await page.goto(`${ORIGIN}/kit.html?id=${KIT}`);
+
+		const kitHelp = page.locator('.kit-card-meta .finish-help');
+
+		await kitHelp.waitFor();
+		assert.equal(await kitHelp.count(), 1, 'only the Holo card in the kit');
+		await kitHelp.scrollIntoViewIfNeeded();
+		await kitHelp.tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Holo');
+		assert.equal(new URL(page.url()).pathname, '/kit.html');
+		await insideScreen(page, 'kit page');
+		await noSideways(page, 'kit page');
 	});
 
 	await check('the home carousel tag opens the explainer without opening the card', async () => {

@@ -166,6 +166,22 @@
 		}, group.finish, el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'));
 	}
 
+	// O mesmo balão onde o acabamento aparece como texto (a ficha e as
+	// linhas de compra da carta, Também à venda, o kit e o carrinho): um "?"
+	// logo depois do nome, só para Holo e Reverse Holo.
+	function finishHelp(finish) {
+		const kind = finishKind(finish);
+
+		return kind
+			? el('button', {'aria-expanded': 'false', 'aria-label': `${finish}: o que é?`, class: 'finish-help', 'data-finish-kind': kind, type: 'button'},
+				el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'))
+			: null;
+	}
+
+	// Um texto com partes separadas por " · ", com o "?" logo depois do
+	// acabamento.
+	const withFinishHelp = (parts, finish) => parts.filter(Boolean).flatMap((part, i) => [i ? ' · ' : null, part, part === finish ? finishHelp(finish) : null]);
+
 	// Uma cartinha desenhada: moldura, ilustração e duas linhas de texto; o
 	// brilho (.finish-shine) vai na ilustração (Holo) ou na moldura
 	// (Reverse Holo).
@@ -262,7 +278,7 @@
 	// catálogo desenhar depois (grade, carrossel, página da carta).
 	function watchFinishTags() {
 		const hover = window.matchMedia('(hover: hover) and (pointer: fine)');
-		const tagOf = (event) => (event.target instanceof Element ? event.target.closest('.finish-tag-help') : null);
+		const tagOf = (event) => (event.target instanceof Element ? event.target.closest('[data-finish-kind]') : null);
 
 		document.addEventListener('click', (event) => {
 			const button = tagOf(event);
@@ -1032,7 +1048,7 @@
 			['Idioma', languageName(group.language)],
 			['Raridade', group.rarity],
 			['Estado', [...group.conditions].join(', ')],
-			['Acabamento', group.finish],
+			['Acabamento', group.finish ? [group.finish, finishHelp(group.finish)] : null],
 			['Disponível', available(group.copies.length)],
 		].filter(([, value]) => value);
 
@@ -1068,6 +1084,7 @@
 			el('p', {class: 'other-finishes-title'}, 'Também à venda'),
 			el('ul', null, others.map((one) => el('li', null,
 				el('a', {href: cardHref(one)}, one.finish || 'Normal'),
+				finishHelp(one.finish),
 				` · ${brl(one.price)} · ${available(one.copies.length)}`
 			)))
 		);
@@ -1099,7 +1116,8 @@
 			}
 
 			const lines = [...variants.values()].map(({free, row, total}) => {
-				const label = [row.condition, row.finish ? finishName(row.finish) : null].filter(Boolean).join(' · ') || 'Cópia';
+				const finish = row.finish ? finishName(row.finish) : null;
+				const label = [row.condition, finish].filter(Boolean).join(' · ') || 'Cópia';
 				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
 					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
 				const button = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
@@ -1119,7 +1137,7 @@
 				const inside = total - free.length;
 
 				return el('div', {class: 'buy-line'},
-					el('p', {class: 'buy-label'}, el('strong', null, label), ` · ${brl(row.price_brl)} · ${available(total)}`),
+					el('p', {class: 'buy-label'}, el('strong', null, label), finishHelp(finish), ` · ${brl(row.price_brl)} · ${available(total)}`),
 					free.length
 						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
 						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
@@ -1553,7 +1571,7 @@
 						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
 						el('p', {class: 'cart-meta'}, item.kind === 'kit'
 							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
-							: [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish].filter(Boolean).join(' · ')),
+							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, item.finish], item.finish)),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
@@ -2317,7 +2335,7 @@
 			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
 			el('div', null,
 				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
-				el('p', {class: 'kit-card-meta'}, [item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, plainFinish(item.finish) ? null : item.finish].filter(Boolean).join(' · ')),
+				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, plainFinish(item.finish) ? null : item.finish], item.finish)),
 				el('p', {class: 'kit-card-alone'}, `Separada: ${brl(item.price)}`)))));
 
 		root.replaceChildren(el('div', {class: 'card-detail kit-detail'},
