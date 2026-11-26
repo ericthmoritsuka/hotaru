@@ -111,152 +111,272 @@
 	const rarityName = (rarity) => (rarity && String(rarity).toLowerCase() !== 'none' ? RARITIES[String(rarity).toLowerCase()] || rarity : null);
 
 	// O acabamento como o tracker escreve ("Normal, 30th anniversary
-	// stamp"): as palavras em inglês que têm nome claro em português.
+	// stamp"). Só o stamp dos 30 anos vira português aqui, porque o texto
+	// também é o endereço da carta (a=) nos anúncios que já estão no ar; o
+	// resto, readFinish separa em partes.
 	const FINISH_WORDS = [
 		[/\b30th anniversary stamp\b/gi, 'carimbo de 30 anos'],
-		[/\b1st edition\b/gi, '1ª edição'],
-		[/\bunlimited\b/gi, 'Ilimitada'],
-		[/\bshadowless\b/gi, 'Sem sombra'],
 		[/\breverse holo\b/gi, 'Reverse Holo'],
 	];
 
 	const finishName = (finish) => FINISH_WORDS.reduce((text, [pattern, word]) => text.replace(pattern, word), String(finish || '')) || null;
 
 	// Cada acabamento de uma carta tem o seu preço e o seu anúncio (Eric,
-	// 2026-11-24), e um acabamento que não é o Normal simples leva uma
-	// etiqueta no anúncio, para não parecer a mesma carta.
+	// 2026-11-24).
 	const plainFinish = (finish) => !finish || /^normal$/i.test(String(finish).trim());
 
-	// O que é cada brilho (Eric, 2026-11-26): a etiqueta de um acabamento
-	// Holo ou Reverse Holo abre um balão que explica o brilho, com duas
-	// cartinhas desenhadas lado a lado, o brilho animado só onde ele fica, e
-	// a do acabamento da carta em destaque. Outros acabamentos (1ª edição,
-	// Sem sombra...) seguem só como etiqueta.
-	const FINISH_HELP = {
+	// As etiquetas da carta (Eric, 2026-11-26), lidas do acabamento que o
+	// tracker publica: "Tipo, subtipo, padrão, stamps, tamanho", como
+	// js/prices.js finishName o escreve a partir da variante do TCGdex
+	// ("Reverse holo, Poké Ball pattern", "Normal, Shadowless, 1st Edition
+	// stamp", "Holo, Cosmos foil, Jumbo"), ou a palavra da cópia importada
+	// ("1st Edition", "Unlimited", "Unlimited holo"). Cada parte vira uma
+	// etiqueta com o nome que a comunidade usa:
+	//   brilho   o padrão antes do tipo: "Poké Ball Reverse Holo", "Cosmos
+	//            Holo" (Eric: o nome do padrão e depois o acabamento)
+	//   edição   1ª Edição, Shadowless e Unlimited (em inglês, como os
+	//            colecionadores falam; Eric)
+	//   stamp    Stamp 30 anos, Stamp 25 anos e os outros stamps
+	//   promo    as cartas promocionais (a raridade Promo)
+	//   tamanho  Jumbo
+	const PATTERN_NAMES = {
+		cosmos: 'Cosmos', 'cracked ice': 'Cracked Ice', duskball: 'Dusk Ball', energy: 'Energy', friendball: 'Friend Ball',
+		galaxy: 'Galaxy', gold: 'Gold', greatball: 'Great Ball', league: 'League', loveball: 'Love Ball', 'master ball': 'Master Ball',
+		masterball: 'Master Ball', 'poke ball': 'Poké Ball', pokeball: 'Poké Ball', 'poké ball': 'Poké Ball', quickball: 'Quick Ball',
+		starlight: 'Starlight', 'team rocket': 'Team Rocket', tinsel: 'Tinsel', ultraball: 'Ultra Ball',
+	};
+	const EDITION_NAMES = {'1999-2000 copyright': 'Copyright 1999-2000', '1st edition': '1ª Edição', shadowless: 'Shadowless', unlimited: 'Unlimited'};
+	const STAMP_NAMES = {
+		'25th celebration': '25 anos', '30 anos': '30 anos', '30th anniversary': '30 anos', 'player rewards program': 'Play! Pokémon',
+		'pokemon center': 'Pokémon Center', 'pre release': 'Pré-lançamento', 'set logo': 'Logo da coleção', staff: 'Staff',
+	};
+
+	// Toda carta de uma coleção carimbada tem o stamp, mas o tracker só o
+	// escreve quando a cópia aponta para a variante do TCGdex que o tem: as
+	// comuns e raras Holo dos 30 anos chegam como "Holo", e o TCGdex nem
+	// marca o logo dos 25 anos impresso nas cartas de Celebrações (cel25-18
+	// Zamazenta V, conferido na imagem em 2026-11-26). Por isso a coleção
+	// decide, e o stamp escrito no acabamento também conta.
+	const STAMPED_SETS = {'30th': '30 anos', cel25: '25 anos'};
+
+	const titleCase = (text) => String(text).replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
+	const setOf = (cardId) => String(cardId || '').replace(/-[^-]*$/, '');
+
+	function readFinish(finish, cardId = '', rarity = '') {
+		const info = {editions: [], jumbo: false, other: [], pattern: null, promo: /^promo$/i.test(String(rarity || '').trim()), stamps: [], type: null};
+		const add = (list, name) => (list.includes(name) ? null : list.push(name));
+
+		for (const part of String(finish || '').split(',').map((one) => one.trim()).filter(Boolean)) {
+			const word = part.toLowerCase();
+			let match;
+
+			if (word === 'normal' || word === 'holo' || word === 'reverse holo') {
+				info.type = word === 'normal' ? 'Normal' : word === 'holo' ? 'Holo' : 'Reverse Holo';
+			}
+			else if (word === 'unlimited holo') {
+				info.type = 'Holo';
+				add(info.editions, 'Unlimited');
+			}
+			else if (EDITION_NAMES[word]) {
+				add(info.editions, EDITION_NAMES[word]);
+			}
+			else if ((match = word.match(/^(.+) stamp$/))) {
+				if (match[1] === '1st edition') {
+					add(info.editions, '1ª Edição');
+				}
+				else {
+					add(info.stamps, STAMP_NAMES[match[1]] || titleCase(match[1]));
+				}
+			}
+			else if ((match = word.match(/^carimbo de (.+)$/))) {
+				add(info.stamps, STAMP_NAMES[match[1]] || match[1]);
+			}
+			else if ((match = word.match(/^(.+) (?:pattern|foil)$/))) {
+				info.pattern = PATTERN_NAMES[match[1]] || titleCase(match[1]);
+			}
+			else if (word === 'jumbo') {
+				info.jumbo = true;
+			}
+			else {
+				info.other.push(part);
+			}
+		}
+
+		if (STAMPED_SETS[setOf(cardId)]) {
+			add(info.stamps, STAMPED_SETS[setOf(cardId)]);
+		}
+
+		return info;
+	}
+
+	// O brilho como a etiqueta o escreve: o padrão antes do tipo, e nada no
+	// Normal simples.
+	function shineLabel(info) {
+		const type = info.type === 'Normal' && info.pattern ? null : info.type;
+		const words = [info.pattern, type === 'Normal' ? null : type].filter(Boolean).join(' ');
+
+		return [words, ...info.other].filter(Boolean).join(', ') || null;
+	}
+
+	const stampLabel = (name) => `Stamp ${name}`;
+
+	// As etiquetas, na ordem do canto da foto: o brilho (dourado) em cima,
+	// depois as marcas (escuras): edição, stamps, promo e tamanho. help é o
+	// balão (HELP), quando há um.
+	function badgesOf(info) {
+		const shine = shineLabel(info);
+		const shineHelp = info.type === 'Reverse Holo' ? 'reverse' : info.type === 'Holo' ? 'holo' : null;
+		const EDITION_HELP = {'1ª Edição': 'first', Shadowless: 'shadowless', Unlimited: 'unlimited'};
+		const STAMP_HELP = {'25 anos': 'stamp25', '30 anos': 'stamp30'};
+
+		return [
+			shine ? {help: shineHelp, label: shine, pattern: info.pattern, shine: true} : null,
+			...info.editions.map((name) => ({help: EDITION_HELP[name] || null, label: name})),
+			...info.stamps.map((name) => ({help: STAMP_HELP[name] || null, label: stampLabel(name)})),
+			info.promo ? {help: 'promo', label: 'Promo'} : null,
+			info.jumbo ? {help: null, label: 'Jumbo'} : null,
+		].filter(Boolean);
+	}
+
+	// O que cada etiqueta quer dizer (Eric, 2026-11-26). Os brilhos mostram
+	// duas cartinhas desenhadas, e as edições duas molduras; os stamps, a 1ª
+	// Edição e a estrela das promos mostram um recorte de uma carta de
+	// verdade, da imagem do TCGdex que o site já usa (nada desenhado por nós):
+	//   stamp-30-anos.webp    Lugia 30th-121, canto da ilustração
+	//   stamp-25-anos.webp    Zamazenta V cel25-18, canto da ilustração
+	//   primeira-edicao.webp  Moltres base3-27 (Fossil), stamp Edition 1
+	//   promo-estrela.webp    Cottonee mep-018, código, número e estrela PROMO
+	const HELP = {
+		first: {
+			picture: {alt: 'O stamp Edition 1 à esquerda, logo abaixo da ilustração de uma carta do Fossil.', height: 150, src: 'assets/primeira-edicao.webp', width: 280},
+			text: 'A primeira tiragem das coleções da época da Wizards (1999 a 2002), com o stamp Edition 1 à esquerda, logo abaixo da ilustração. Costuma valer mais que a mesma carta Unlimited.',
+			title: '1ª Edição',
+		},
 		holo: {
+			minis: 'shine',
 			text: 'A carta tem brilho holográfico. Na maioria das cartas, o brilho fica só na ilustração; nas especiais, como as ex e as ilustrações raras, ele pode cobrir a carta inteira.',
 			title: 'Holo',
 		},
+		promo: {
+			picture: {alt: 'O canto de uma carta promocional: o código MEP, o número 018 sem o total da coleção e a estrela preta escrita PROMO.', height: 128, src: 'assets/promo-estrela.webp', width: 448},
+			text: 'Uma carta promocional: sai em produtos especiais e eventos, não nos boosters das coleções. Tem a estrela preta escrita PROMO ao lado do número, que vem sem o total da coleção (018, e não 018/191).',
+			title: 'Promo',
+		},
 		reverse: {
+			minis: 'shine',
 			text: 'O brilho fica em volta: na moldura, no fundo e na área do texto, e a ilustração não brilha. É uma versão especial, e a mesma carta também existe sem esse brilho em volta.',
 			title: 'Reverse Holo',
 		},
-		// O Stamp 30 anos (Eric, 2026-11-26) mostra o stamp de verdade:
-		// assets/stamp-30-anos.webp é um recorte do canto da ilustração do
-		// Lugia 30th-121 no TCGdex, sem desenho nosso do logo.
-		stamp: {
+		shadowless: {
+			minis: 'edition',
+			text: 'Uma das primeiras tiragens do Base Set, de 1999: a moldura da ilustração não tem a sombra do lado direito, que a tiragem Unlimited ganhou depois.',
+			title: 'Shadowless',
+		},
+		stamp25: {
+			picture: {alt: 'O stamp dos 25 anos no canto da ilustração de uma carta: o rosto do Pikachu com 2 e 5 nas bochechas.', height: 180, src: 'assets/stamp-25-anos.webp', width: 280},
+			text: 'O símbolo dos 25 anos de Pokémon: o Pikachu com 2 e 5 nas bochechas, no canto da ilustração. Vem impresso em todas as cartas da coleção Celebrações.',
+			title: 'Stamp 25 anos',
+		},
+		stamp30: {
+			picture: {alt: 'O stamp dos 30 anos no canto da ilustração de uma carta: o rosto do Pikachu com 3 e 0 nas bochechas.', height: 180, src: 'assets/stamp-30-anos.webp', width: 280},
 			text: 'O símbolo dos 30 anos de Pokémon: o Pikachu com 3 e 0 nas bochechas, no canto da ilustração. Vem impresso em todas as cartas da coleção Celebração de 30 Anos.',
 			title: 'Stamp 30 anos',
 		},
+		unlimited: {
+			minis: 'edition',
+			text: 'A tiragem comum das primeiras coleções, depois da 1ª Edição (e, no Base Set, da Shadowless): sem o stamp Edition 1, e com a sombra do lado direito da moldura da ilustração.',
+			title: 'Unlimited',
+		},
 	};
 
-	// O nome do stamp que tem balão (STAMPED_SETS e o acabamento o dão).
-	const STAMP_30 = '30 anos';
+	// O padrão do brilho, antes do texto do Holo ou do Reverse Holo.
+	const PATTERN_TEXT = {
+		Cosmos: 'O brilho tem o padrão Cosmos: círculos e pontos que lembram um céu estrelado, comum nas cartas promocionais.',
+		'Master Ball': 'O brilho tem o desenho de várias Master Balls, em vez do brilho liso; costuma ser mais rara que a Poké Ball Reverse Holo da mesma carta.',
+		'Poké Ball': 'O brilho tem o desenho de várias Poké Balls, em vez do brilho liso.',
+	};
+	const patternText = (pattern) => PATTERN_TEXT[pattern] || `O brilho tem um padrão próprio, ${pattern}, em vez do brilho liso.`;
 
-	const finishKind = (finish) => (/\breverse\b/i.test(finish || '') ? 'reverse' : /\bholo\b/i.test(finish || '') ? 'holo' : null);
+	const helpAttrs = (badge, cls) => ({
+		'aria-expanded': 'false',
+		'aria-label': `${badge.label}: o que é?`,
+		class: cls,
+		'data-finish-kind': badge.help,
+		'data-pattern': badge.pattern || null,
+		'data-title': badge.label,
+		type: 'button',
+	});
 
-	// O carimbo é outra coisa que o brilho (Eric, 2026-11-26), e ganha a
-	// sua própria etiqueta. Toda carta de uma coleção carimbada tem o
-	// carimbo, mas o tracker só o escreve no acabamento quando a cópia
-	// aponta para a variante do TCGdex (as comuns e raras Holo dos 30 anos
-	// chegam como "Holo"); por isso a coleção decide, e o carimbo escrito
-	// no acabamento também conta.
-	const STAMPED_SETS = {'30th': '30 anos'};
-	const STAMP_PART = /\bstamp\b|^carimbo\b/i;
-	const finishParts = (finish) => String(finish || '').split(',').map((part) => part.trim()).filter(Boolean);
+	const helpMark = () => el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?');
 
-	// O brilho: o acabamento sem os carimbos ("Holo, carimbo de 30 anos" é
-	// Holo).
-	const shineName = (finish) => finishParts(finish).filter((part) => !STAMP_PART.test(part)).join(', ') || null;
+	// Uma etiqueta no canto da foto, como as do resto do site (.tag).
+	function badgeTag(badge) {
+		const cls = `tag ${badge.shine ? 'foil finish-tag' : 'stamp-tag'}`;
 
-	// O brilho como a página o escreve: nada no Normal simples.
-	const shownShine = (finish) => (plainFinish(shineName(finish)) ? null : shineName(finish));
-
-	function stampNames(cardId, finish) {
-		const names = finishParts(finish).filter((part) => STAMP_PART.test(part)).map((part) => part.replace(/^carimbo de /i, ''));
-		const set = STAMPED_SETS[String(cardId || '').replace(/-[^-]*$/, '')];
-
-		return [...new Set(set ? [...names, set] : names)];
+		return badge.help
+			? el('button', helpAttrs(badge, `${cls} finish-tag-help`), badge.label, helpMark())
+			: el('span', {class: cls}, badge.label);
 	}
 
-	// "Stamp 30 anos", como os colecionadores falam, e curto para caber
-	// numa linha no tile do celular ("Carimbo de 30 anos" quebrava; Eric,
-	// 2026-11-26).
-	const stampLabel = (name) => (/\bstamp\b/i.test(name) ? name : `Stamp ${name}`);
-
-	// A etiqueta do brilho, com o balão em Holo e Reverse Holo.
-	function shineTag(shine) {
-		const kind = finishKind(shine);
-
-		if (!kind) {
-			return el('span', {class: 'tag foil finish-tag'}, shine);
-		}
-
-		return el('button', {
-			'aria-expanded': 'false',
-			'aria-label': `${shine}: o que é?`,
-			class: 'tag foil finish-tag finish-tag-help',
-			'data-finish-kind': kind,
-			type: 'button',
-		}, shine, el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'));
-	}
-
-	// As etiquetas ficam no canto da foto, como as do resto do site (.tag):
-	// o brilho em cima, o stamp embaixo.
 	function finishTags(group) {
-		const shine = shownShine(group.finish);
-		const tags = [
-			shine ? shineTag(shine) : null,
-			...stampNames(group.cardId, group.finish).map(stampTag),
-		].filter(Boolean);
+		const badges = badgesOf(readFinish(group.finish, group.cardId, group.rarity));
 
-		return tags.length ? el('div', {class: 'finish-tags'}, tags) : null;
+		return badges.length ? el('div', {class: 'finish-tags'}, badges.map(badgeTag)) : null;
 	}
 
-	// O mesmo balão onde o acabamento aparece como texto (a ficha e as
-	// linhas de compra da carta, Também à venda, o kit e o carrinho): um "?"
-	// logo depois do nome, só para Holo e Reverse Holo.
-	function finishHelp(finish) {
-		const kind = finishKind(finish);
+	// O mesmo balão onde a etiqueta aparece como texto (a ficha e as linhas
+	// de compra da carta, Também à venda, o kit e o carrinho): um "?" logo
+	// depois do nome.
+	const badgeHelp = (badge) => (badge && badge.help ? el('button', helpAttrs(badge, 'finish-help'), helpMark()) : null);
 
-		return kind
-			? el('button', {'aria-expanded': 'false', 'aria-label': `${finish}: o que é?`, class: 'finish-help', 'data-finish-kind': kind, type: 'button'},
-				el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'))
-			: null;
+	// As etiquetas de um acabamento como texto, sem a promo (a raridade já
+	// a diz): o brilho (ou Normal, com normal), as edições, os stamps e o
+	// tamanho.
+	function finishWords(finish, cardId, {normal = false} = {}) {
+		const badges = badgesOf({...readFinish(finish, cardId), promo: false});
+
+		return !normal || badges.some((badge) => badge.shine) ? badges : [{label: 'Normal', shine: true}, ...badges];
 	}
 
-	// A etiqueta do stamp: com balão no Stamp 30 anos, e só a etiqueta nos
-	// outros (que chegam do tracker em inglês).
-	const stampTag = (name) => (name === STAMP_30
-		? el('button', {'aria-expanded': 'false', 'aria-label': `${stampLabel(name)}: o que é?`, class: 'tag stamp-tag finish-tag-help', 'data-finish-kind': 'stamp', type: 'button'},
-			stampLabel(name), el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'))
-		: el('span', {class: 'tag stamp-tag'}, stampLabel(name)));
-
-	// O "?" ao lado do stamp escrito como texto.
-	const stampHelp = (name) => (name === STAMP_30
-		? el('button', {'aria-expanded': 'false', 'aria-label': `${stampLabel(name)}: o que é?`, class: 'finish-help', 'data-finish-kind': 'stamp', type: 'button'},
-			el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'))
-		: null);
-
-	// Um texto com partes separadas por " · ", com o "?" logo depois do
-	// acabamento e do Stamp 30 anos.
-	const withFinishHelp = (parts, finish) => parts.filter(Boolean).flatMap((part, i) => [
+	// Um texto com partes separadas por " · ", com o "?" logo depois de
+	// cada etiqueta que tem balão.
+	const withFinishHelp = (parts, badges) => [...parts.filter(Boolean), ...badges].flatMap((part, i) => [
 		i ? ' · ' : null,
-		part,
-		part === finish ? finishHelp(finish) : part === stampLabel(STAMP_30) ? stampHelp(STAMP_30) : null,
+		typeof part === 'string' ? part : part.label,
+		typeof part === 'string' ? null : badgeHelp(part),
 	]);
 
+	// O nome da carta com as etiquetas do acabamento, para títulos, alt e
+	// e-mail.
+	const finishSummary = (group) => finishWords(group.finish, group.cardId).map((badge) => badge.label).join(', ');
+
 	// Uma cartinha desenhada: moldura, ilustração e duas linhas de texto; o
-	// brilho (.finish-shine) vai na ilustração (Holo) ou na moldura
-	// (Reverse Holo).
+	// brilho vai na ilustração (Holo) ou na moldura (Reverse Holo), e a
+	// sombra da moldura da ilustração marca a Unlimited.
 	const miniCard = (kind, current) => el('figure', {class: `finish-mini finish-mini-${kind}${current ? ' is-current' : ''}`},
 		el('span', {'aria-hidden': 'true', class: 'finish-mini-card'},
 			el('span', {class: 'finish-mini-art'}),
 			el('span', {class: 'finish-mini-line'}),
 			el('span', {class: 'finish-mini-line finish-mini-line-short'})
 		),
-		el('figcaption', null, FINISH_HELP[kind].title)
+		el('figcaption', null, HELP[kind].title)
 	);
+
+	// O conteúdo do balão de uma etiqueta.
+	function helpContent(button) {
+		const kind = button.dataset.finishKind;
+		const help = HELP[kind];
+		const pattern = button.dataset.pattern;
+		const pairs = {edition: ['shadowless', 'unlimited'], shine: ['holo', 'reverse']};
+
+		return [
+			el('p', {class: 'finish-pop-title'}, button.dataset.title || help.title),
+			help.picture
+				? el('img', {alt: help.picture.alt, class: 'finish-pop-stamp', height: String(help.picture.height), src: help.picture.src, width: String(help.picture.width)})
+				: el('div', {class: 'finish-pop-cards'}, pairs[help.minis].map((one) => miniCard(one, one === kind))),
+			el('p', {class: 'finish-pop-text'}, pattern ? `${patternText(pattern)} ${help.text}` : help.text),
+		];
+	}
 
 	// O balão é um só na página, preso ao body, para não ser cortado pela
 	// foto (overflow hidden) nem pelo carrossel; abre com um toque ou
@@ -302,16 +422,9 @@
 
 		closeFinishPop();
 
-		const kind = button.dataset.finishKind;
 		const node = finishPopNode();
 
-		node.replaceChildren(
-			el('p', {class: 'finish-pop-title'}, FINISH_HELP[kind].title),
-			kind === 'stamp'
-				? el('img', {alt: 'O stamp dos 30 anos no canto da ilustração de uma carta: o rosto do Pikachu com 3 e 0 nas bochechas.', class: 'finish-pop-stamp', height: '180', src: 'assets/stamp-30-anos.webp', width: '280'})
-				: el('div', {class: 'finish-pop-cards'}, miniCard('holo', kind === 'holo'), miniCard('reverse', kind === 'reverse')),
-			el('p', {class: 'finish-pop-text'}, FINISH_HELP[kind].text)
-		);
+		node.replaceChildren(...helpContent(button));
 		node.hidden = false;
 		node.classList.remove('is-away');
 		finishPop.button = button;
@@ -676,7 +789,7 @@
 	const cardHref = (group) => `carta.html?c=${encodeURIComponent(group.cardId)}&l=${encodeURIComponent(group.language)}${group.finish ? `&a=${encodeURIComponent(group.finish)}` : ''}`;
 
 	// O nome da carta com o acabamento, quando não é o Normal simples.
-	const fullName = (group) => (shownShine(group.finish) ? `${group.name} (${shownShine(group.finish)})` : group.name);
+	const fullName = (group) => (finishSummary(group) ? `${group.name} (${finishSummary(group)})` : group.name);
 
 	const available = (n) => (n === 1 ? '1 disponível' : `${n} disponíveis`);
 
@@ -760,7 +873,7 @@
 			shot(group),
 			el('div', {class: 'meta'},
 				el('span', {class: 'kind'}, group.featured ? featuredMark() : null, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
-				el('h3', null, el('a', {'aria-label': shownShine(group.finish) ? fullName(group) : null, href: cardHref(group)}, group.name)),
+				el('h3', null, el('a', {'aria-label': finishSummary(group) ? fullName(group) : null, href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
 				el('div', {class: 'card-foot'},
@@ -772,7 +885,7 @@
 	}
 
 	const mailto = (group) => {
-		const what = `${group.name} (${[setLine(group), languageName(group.language), shownShine(group.finish), ...stampNames(group.cardId, group.finish).map(stampLabel)].filter(Boolean).join(', ')})`;
+		const what = `${group.name} (${[setLine(group), languageName(group.language), finishSummary(group)].filter(Boolean).join(', ')})`;
 		const subject = `Quero a carta ${what}`;
 		const body = `Olá, Eric!\n\nTenho interesse na carta ${what}, por ${brl(group.price)}.\n\nQuantidade: 1\n\nNome:\n`;
 
@@ -1039,7 +1152,7 @@
 		};
 
 		for (const group of groups) {
-			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish, ...stampNames(group.cardId, group.finish).map(stampLabel)].filter(Boolean).join(' '));
+			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish, finishSummary(group)].filter(Boolean).join(' '));
 		}
 
 		function draw() {
@@ -1108,14 +1221,22 @@
 
 		document.title = `${fullName(group)} | Cartas | HOTARU`;
 
+		// A ficha separa as etiquetas: o brilho no Acabamento, e as marcas
+		// em linhas próprias, cada uma com o seu "?".
+		const info = readFinish(group.finish, group.cardId, group.rarity);
+		const badges = badgesOf(info);
+		const shine = badges.find((badge) => badge.shine);
+		const listed = (list) => (list.length ? list.flatMap((badge, i) => [i ? ', ' : null, badge.text || badge.label, badgeHelp(badge)]) : null);
 		const facts = [
 			['Coleção', group.setName],
 			['Número', group.number],
 			['Idioma', languageName(group.language)],
-			['Raridade', group.rarity],
+			['Raridade', group.rarity ? [group.rarity, badgeHelp(badges.find((badge) => badge.help === 'promo'))] : null],
 			['Estado', [...group.conditions].join(', ')],
-			['Acabamento', group.finish ? [shineName(group.finish) || 'Normal', finishHelp(shineName(group.finish))] : null],
-			['Stamp', stampNames(group.cardId, group.finish).length ? stampNames(group.cardId, group.finish).flatMap((name, i) => [i ? ', ' : null, name, stampHelp(name)]) : null],
+			['Acabamento', group.finish ? [shine ? shine.label : 'Normal', badgeHelp(shine)] : null],
+			['Edição', listed(badges.filter((badge) => info.editions.includes(badge.label)))],
+			['Stamp', listed(info.stamps.map((name) => ({...badges.find((badge) => badge.label === stampLabel(name)), text: name})))],
+			['Tamanho', info.jumbo ? 'Jumbo' : null],
 			['Disponível', available(group.copies.length)],
 		].filter(([, value]) => value);
 
@@ -1150,8 +1271,9 @@
 		return el('div', {class: 'other-finishes'},
 			el('p', {class: 'other-finishes-title'}, 'Também à venda'),
 			el('ul', null, others.map((one) => el('li', null,
-				el('a', {href: cardHref(one)}, shineName(one.finish) || 'Normal'),
-				finishHelp(shineName(one.finish)),
+				// O brilho e a edição de cada um; o stamp é da coleção, igual em
+				// todos.
+				...withFinishHelp([], finishWords(one.finish, one.cardId, {normal: true}).filter((badge) => !/^Stamp /.test(badge.label))).map((node, i) => (i === 0 ? el('a', {href: cardHref(one)}, node) : node)),
 				` · ${brl(one.price)} · ${available(one.copies.length)}`
 			)))
 		);
@@ -1183,8 +1305,10 @@
 			}
 
 			const lines = [...variants.values()].map(({free, row, total}) => {
-				const finish = row.finish ? shineName(finishName(row.finish)) : null;
-				const label = [row.condition, finish].filter(Boolean).join(' · ') || 'Cópia';
+				// O brilho e a edição da cópia; o stamp é da coleção, e fica na
+				// ficha.
+				const words = row.finish ? finishWords(finishName(row.finish), group.cardId).filter((badge) => !/^Stamp /.test(badge.label)) : [];
+				const label = [row.condition, ...words.map((badge) => badge.label)].filter(Boolean).join(' · ') || 'Cópia';
 				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
 					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
 				const button = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
@@ -1204,7 +1328,7 @@
 				const inside = total - free.length;
 
 				return el('div', {class: 'buy-line'},
-					el('p', {class: 'buy-label'}, el('strong', null, label), finishHelp(finish), ` · ${brl(row.price_brl)} · ${available(total)}`),
+					el('p', {class: 'buy-label'}, el('strong', null, label), words.map(badgeHelp), ` · ${brl(row.price_brl)} · ${available(total)}`),
 					free.length
 						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
 						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
@@ -1638,7 +1762,7 @@
 						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
 						el('p', {class: 'cart-meta'}, item.kind === 'kit'
 							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
-							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, shineName(item.finish), ...stampNames(item.cardId, item.finish).map(stampLabel)], shineName(item.finish))),
+							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition], finishWords(item.finish, item.cardId, {normal: true}))),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
@@ -2402,7 +2526,7 @@
 			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
 			el('div', null,
 				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
-				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition, shownShine(item.finish), ...stampNames(item.cardId, item.finish).map(stampLabel)], shownShine(item.finish))),
+				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition], finishWords(item.finish, item.cardId))),
 				el('p', {class: 'kit-card-alone'}, `Separada: ${brl(item.price)}`)))));
 
 		root.replaceChildren(el('div', {class: 'card-detail kit-detail'},
