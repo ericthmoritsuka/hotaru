@@ -949,6 +949,111 @@ section { padding: 76px 0; }
 .finish-tag { max-width: calc(100% - 28px); line-height: 1.3; white-space: normal; }
 .card-detail .finish-tag { top: 18px; left: 18px; font-size: 11px; padding: 7px 12px; }
 
+/* Holo e Reverse Holo: a etiqueta é um botão que abre o balão .finish-pop
+   (assets/catalogo.js, FINISH_HELP). Fica acima do link esticado do tile. */
+.finish-tag-help {
+  z-index: 3;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  margin: 0;
+  cursor: pointer;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+.finish-tag-help::before { content: ""; position: absolute; inset: -8px; }
+.finish-tag-help:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.finish-tag-i {
+  flex: none;
+  display: inline-grid;
+  place-items: center;
+  width: 1.45em;
+  height: 1.45em;
+  border-radius: 50%;
+  background: var(--navy-deep);
+  color: var(--gold-lt);
+  font-size: 0.95em;
+  letter-spacing: 0;
+}
+
+.finish-pop {
+  position: fixed;
+  z-index: 60;
+  width: min(300px, calc(100vw - 32px));
+  padding: 16px 16px 14px;
+  border-radius: 14px;
+  background: var(--navy-deep);
+  border: 1px solid rgba(240, 219, 155, 0.35);
+  box-shadow: var(--shadow-md);
+  color: var(--ivory);
+}
+.finish-pop[hidden] { display: none; }
+.finish-pop.is-away { visibility: hidden; }
+.finish-pop-title { margin: 0 0 12px; font: 600 1.05rem/1.2 var(--serif); color: var(--gold-lt); }
+.finish-pop-text { margin: 12px 0 0; font-size: 0.84rem; line-height: 1.5; }
+.finish-pop-cards { display: flex; justify-content: center; gap: 22px; }
+
+.finish-mini { margin: 0; display: grid; justify-items: center; gap: 7px; opacity: 0.5; }
+.finish-mini.is-current { opacity: 1; }
+.finish-mini figcaption { font: 600 9px/1 var(--sans); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ivory); }
+.finish-mini.is-current figcaption { color: var(--lime); }
+
+/* A cartinha: moldura, ilustração (uma paisagem simples) e duas linhas de
+   texto. O brilho é um arco-íris que corre na ilustração (Holo) ou na
+   moldura (Reverse Holo). */
+.finish-mini-card {
+  position: relative;
+  display: grid;
+  grid-template-rows: 46px auto auto;
+  align-content: start;
+  gap: 6px;
+  width: 64px;
+  height: 90px;
+  padding: 6px;
+  border-radius: 6px;
+  background: #e7e1d1;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+.finish-mini.is-current .finish-mini-card { outline: 2px solid var(--gold-lt); outline-offset: 3px; }
+.finish-mini-art {
+  border-radius: 3px;
+  background:
+    radial-gradient(circle at 70% 32%, #f6d36b 0 6px, transparent 7px),
+    linear-gradient(170deg, transparent 58%, #4f8a5b 59%),
+    linear-gradient(180deg, #8fc3e6, #cfe6f3);
+}
+.finish-mini-line { height: 4px; border-radius: 2px; background: rgba(14, 31, 71, 0.35); }
+.finish-mini-line-short { width: 60%; }
+
+.finish-mini-holo .finish-mini-art,
+.finish-mini-reverse .finish-mini-card {
+  background-size: 300% 300%, auto, auto, auto;
+  animation: finish-shine 2.4s ease-in-out infinite alternate;
+}
+.finish-mini-holo .finish-mini-art {
+  background-image:
+    linear-gradient(115deg, rgba(255, 120, 200, 0.55) 0%, rgba(255, 240, 140, 0.6) 20%, rgba(255, 255, 255, 0.85) 30%, rgba(120, 230, 255, 0.6) 42%, rgba(170, 140, 255, 0.55) 58%, rgba(255, 120, 200, 0.55) 75%, rgba(255, 240, 140, 0.6) 100%),
+    radial-gradient(circle at 70% 32%, #f6d36b 0 6px, transparent 7px),
+    linear-gradient(170deg, transparent 58%, #4f8a5b 59%),
+    linear-gradient(180deg, #8fc3e6, #cfe6f3);
+}
+.finish-mini-reverse .finish-mini-card {
+  background-image:
+    linear-gradient(115deg, #f6b8de 0%, #fbeea4 20%, #ffffff 30%, #a9ecfb 42%, #cbbcff 58%, #f6b8de 75%, #fbeea4 100%),
+    none, none, none;
+}
+
+@keyframes finish-shine {
+  from { background-position: 0% 0%, 0 0, 0 0, 0 0; }
+  to   { background-position: 100% 100%, 0 0, 0 0, 0 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .finish-mini-holo .finish-mini-art,
+  .finish-mini-reverse .finish-mini-card { animation: none; background-position: 30% 30%, 0 0, 0 0, 0 0; }
+}
+
 .other-finishes { margin: 0 0 22px; font-size: 0.9rem; }
 .other-finishes-title { margin: 0 0 6px; font: 600 10px/1 var(--sans); letter-spacing: 0.17em; text-transform: uppercase; color: var(--gold-dk); }
 .other-finishes ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 4px; }

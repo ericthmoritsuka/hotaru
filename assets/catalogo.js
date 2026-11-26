@@ -127,8 +127,209 @@
 	// etiqueta no anúncio, para não parecer a mesma carta.
 	const plainFinish = (finish) => !finish || /^normal$/i.test(String(finish).trim());
 
+	// O que é cada brilho (Eric, 2026-11-26): a etiqueta de um acabamento
+	// Holo ou Reverse Holo abre um balão que explica o brilho, com duas
+	// cartinhas desenhadas lado a lado, o brilho animado só onde ele fica, e
+	// a do acabamento da carta em destaque. Outros acabamentos (1ª edição,
+	// Sem sombra...) seguem só como etiqueta.
+	const FINISH_HELP = {
+		holo: {
+			text: 'A carta tem brilho holográfico. Na maioria das cartas, o brilho fica só na ilustração; nas especiais, como as ex e as ilustrações raras, ele pode cobrir a carta inteira.',
+			title: 'Holo',
+		},
+		reverse: {
+			text: 'O brilho fica em volta: na moldura, no fundo e na área do texto, e a ilustração não brilha. É uma versão especial, e a mesma carta também existe sem esse brilho em volta.',
+			title: 'Reverse Holo',
+		},
+	};
+
+	const finishKind = (finish) => (/\breverse\b/i.test(finish || '') ? 'reverse' : /\bholo\b/i.test(finish || '') ? 'holo' : null);
+
 	// A etiqueta fica no canto da foto, como as do resto do site (.tag).
-	const finishTag = (group) => (plainFinish(group.finish) ? null : el('span', {class: 'tag foil finish-tag'}, group.finish));
+	function finishTag(group) {
+		if (plainFinish(group.finish)) {
+			return null;
+		}
+
+		const kind = finishKind(group.finish);
+
+		if (!kind) {
+			return el('span', {class: 'tag foil finish-tag'}, group.finish);
+		}
+
+		return el('button', {
+			'aria-expanded': 'false',
+			'aria-label': `${group.finish}: o que é?`,
+			class: 'tag foil finish-tag finish-tag-help',
+			'data-finish-kind': kind,
+			type: 'button',
+		}, group.finish, el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'));
+	}
+
+	// Uma cartinha desenhada: moldura, ilustração e duas linhas de texto; o
+	// brilho (.finish-shine) vai na ilustração (Holo) ou na moldura
+	// (Reverse Holo).
+	const miniCard = (kind, current) => el('figure', {class: `finish-mini finish-mini-${kind}${current ? ' is-current' : ''}`},
+		el('span', {'aria-hidden': 'true', class: 'finish-mini-card'},
+			el('span', {class: 'finish-mini-art'}),
+			el('span', {class: 'finish-mini-line'}),
+			el('span', {class: 'finish-mini-line finish-mini-line-short'})
+		),
+		el('figcaption', null, FINISH_HELP[kind].title)
+	);
+
+	// O balão é um só na página, preso ao body, para não ser cortado pela
+	// foto (overflow hidden) nem pelo carrossel; abre com um toque ou
+	// clique, e também ao passar o mouse onde há mouse.
+	const finishPop = {button: null, node: null, timer: 0};
+
+	function finishPopNode() {
+		if (!finishPop.node) {
+			finishPop.node = el('div', {class: 'finish-pop', hidden: true, id: 'finish-pop', role: 'tooltip'});
+			finishPop.node.addEventListener('mouseenter', () => clearTimeout(finishPop.timer));
+			finishPop.node.addEventListener('mouseleave', () => closeFinishPopSoon());
+			document.body.append(finishPop.node);
+		}
+
+		return finishPop.node;
+	}
+
+	function placeFinishPop() {
+		const {button, node} = finishPop;
+
+		if (!button || !node) {
+			return;
+		}
+
+		const gutter = 16;
+		const spot = button.getBoundingClientRect();
+		const width = node.offsetWidth;
+		const height = node.offsetHeight;
+		const left = Math.min(Math.max(spot.left, gutter), window.innerWidth - width - gutter);
+		const below = spot.bottom + 8;
+		const top = below + height > window.innerHeight - gutter && spot.top - 8 - height >= gutter ? spot.top - 8 - height : below;
+
+		node.style.left = `${Math.max(left, gutter)}px`;
+		node.style.top = `${top}px`;
+	}
+
+	function openFinishPop(button) {
+		clearTimeout(finishPop.timer);
+
+		if (finishPop.button === button) {
+			return;
+		}
+
+		closeFinishPop();
+
+		const kind = button.dataset.finishKind;
+		const node = finishPopNode();
+
+		node.replaceChildren(
+			el('p', {class: 'finish-pop-title'}, FINISH_HELP[kind].title),
+			el('div', {class: 'finish-pop-cards'}, miniCard('holo', kind === 'holo'), miniCard('reverse', kind === 'reverse')),
+			el('p', {class: 'finish-pop-text'}, FINISH_HELP[kind].text)
+		);
+		node.hidden = false;
+		node.classList.remove('is-away');
+		finishPop.button = button;
+		button.setAttribute('aria-expanded', 'true');
+		button.setAttribute('aria-describedby', 'finish-pop');
+		placeFinishPop();
+	}
+
+	function closeFinishPop() {
+		clearTimeout(finishPop.timer);
+
+		if (finishPop.button) {
+			finishPop.button.setAttribute('aria-expanded', 'false');
+			finishPop.button.removeAttribute('aria-describedby');
+		}
+
+		if (finishPop.node) {
+			finishPop.node.hidden = true;
+		}
+
+		finishPop.button = null;
+	}
+
+	function closeFinishPopSoon() {
+		clearTimeout(finishPop.timer);
+		finishPop.timer = setTimeout(closeFinishPop, 200);
+	}
+
+	// Os eventos ficam no document, então valem para toda etiqueta que o
+	// catálogo desenhar depois (grade, carrossel, página da carta).
+	function watchFinishTags() {
+		const hover = window.matchMedia('(hover: hover) and (pointer: fine)');
+		const tagOf = (event) => (event.target instanceof Element ? event.target.closest('.finish-tag-help') : null);
+
+		document.addEventListener('click', (event) => {
+			const button = tagOf(event);
+
+			if (button) {
+				event.preventDefault();
+				event.stopPropagation();
+
+				if (finishPop.button === button && !hover.matches) {
+					closeFinishPop();
+				}
+				else {
+					openFinishPop(button);
+				}
+
+				return;
+			}
+
+			if (finishPop.node && !finishPop.node.contains(event.target)) {
+				closeFinishPop();
+			}
+		}, true);
+		document.addEventListener('mouseover', (event) => {
+			const button = tagOf(event);
+
+			if (button && hover.matches) {
+				openFinishPop(button);
+			}
+		});
+		document.addEventListener('mouseout', (event) => {
+			const button = tagOf(event);
+
+			if (button && hover.matches && !button.contains(event.relatedTarget)) {
+				closeFinishPopSoon();
+			}
+		});
+		document.addEventListener('keydown', (event) => {
+			if (event.key === 'Escape' && finishPop.button) {
+				const button = finishPop.button;
+
+				closeFinishPop();
+				button.focus();
+			}
+		});
+		// Rolando a página ou o carrossel, o balão acompanha a etiqueta, e
+		// some enquanto ela está fora da tela ou da faixa do carrossel (sem
+		// fechar: a rolagem suave do Tab até a etiqueta passa por fora).
+		const followFinishTag = () => {
+			if (!finishPop.button) {
+				return;
+			}
+
+			const spot = finishPop.button.getBoundingClientRect();
+			const track = finishPop.button.closest('.carousel-track');
+			const area = track ? track.getBoundingClientRect() : {bottom: window.innerHeight, left: 0, right: window.innerWidth, top: 0};
+			const seen = finishPop.button.isConnected && spot.bottom > area.top && spot.top < area.bottom && spot.right > area.left && spot.left < area.right;
+
+			finishPop.node.classList.toggle('is-away', !seen);
+
+			if (seen) {
+				placeFinishPop();
+			}
+		};
+
+		document.addEventListener('scroll', followFinishTag, {capture: true, passive: true});
+		window.addEventListener('resize', followFinishTag, {passive: true});
+	}
 
 	const languageName = (code) => LANGUAGES[String(code || '').toLowerCase()] || (code ? String(code).toUpperCase() : '');
 
@@ -405,8 +606,10 @@
 			? el('img', {alt: `${fullName(group)}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
 			: el('span', {class: 'card-pic card-pic-none'}, group.name);
 
+		// No tile, a etiqueta fica fora do link da foto, irmã dele no
+		// article (.card-item, que a posiciona), porque ela pode ser um botão.
 		return link
-			? el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, finishTag(group), inner)
+			? [finishTag(group), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner)]
 			: el('div', {class: 'shot card-shot'}, finishTag(group), inner);
 	}
 
@@ -2163,6 +2366,7 @@
 
 	async function start() {
 		drawCartCount();
+		watchFinishTags();
 
 		const mineRoot = document.querySelector('[data-catalog="mine"]');
 
