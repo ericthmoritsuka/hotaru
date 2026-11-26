@@ -1034,6 +1034,16 @@ section { padding: 76px 0; }
 .finish-pop-title { margin: 0 0 12px; font: 600 1.05rem/1.2 var(--serif); color: var(--gold-lt); }
 .finish-pop-text { margin: 12px 0 0; font-size: 0.84rem; line-height: 1.5; }
 .finish-pop-cards { display: flex; justify-content: center; gap: 22px; }
+.finish-pop-stamp { display: block; width: 100%; height: auto; border-radius: 8px; }
+
+/* O "?" do Stamp 30 anos: claro, porque a etiqueta é escura. */
+.stamp-tag .finish-tag-i { background: var(--gold-lt); color: var(--navy-deep); }
+
+/* Num celular estreito (360 px), o "Stamp 30 anos ?" só cabe numa linha
+   um pouco mais junto. */
+@media (max-width: 380px) {
+  .finish-tags .stamp-tag { letter-spacing: 0.1em; gap: 4px; padding-left: 8px; padding-right: 8px; }
+}
 
 .finish-mini { margin: 0; display: grid; justify-items: center; gap: 7px; opacity: 0.5; }
 .finish-mini.is-current { opacity: 1; }

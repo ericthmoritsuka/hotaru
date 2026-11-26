@@ -141,7 +141,17 @@
 			text: 'O brilho fica em volta: na moldura, no fundo e na área do texto, e a ilustração não brilha. É uma versão especial, e a mesma carta também existe sem esse brilho em volta.',
 			title: 'Reverse Holo',
 		},
+		// O Stamp 30 anos (Eric, 2026-11-26) mostra o stamp de verdade:
+		// assets/stamp-30-anos.webp é um recorte do canto da ilustração do
+		// Lugia 30th-121 no TCGdex, sem desenho nosso do logo.
+		stamp: {
+			text: 'O símbolo dos 30 anos de Pokémon: o Pikachu com 3 e 0 nas bochechas, no canto da ilustração. Vem impresso em todas as cartas da coleção Celebração de 30 Anos.',
+			title: 'Stamp 30 anos',
+		},
 	};
+
+	// O nome do stamp que tem balão (STAMPED_SETS e o acabamento o dão).
+	const STAMP_30 = '30 anos';
 
 	const finishKind = (finish) => (/\breverse\b/i.test(finish || '') ? 'reverse' : /\bholo\b/i.test(finish || '') ? 'holo' : null);
 
@@ -197,7 +207,7 @@
 		const shine = shownShine(group.finish);
 		const tags = [
 			shine ? shineTag(shine) : null,
-			...stampNames(group.cardId, group.finish).map((name) => el('span', {class: 'tag stamp-tag'}, stampLabel(name))),
+			...stampNames(group.cardId, group.finish).map(stampTag),
 		].filter(Boolean);
 
 		return tags.length ? el('div', {class: 'finish-tags'}, tags) : null;
@@ -215,9 +225,26 @@
 			: null;
 	}
 
+	// A etiqueta do stamp: com balão no Stamp 30 anos, e só a etiqueta nos
+	// outros (que chegam do tracker em inglês).
+	const stampTag = (name) => (name === STAMP_30
+		? el('button', {'aria-expanded': 'false', 'aria-label': `${stampLabel(name)}: o que é?`, class: 'tag stamp-tag finish-tag-help', 'data-finish-kind': 'stamp', type: 'button'},
+			stampLabel(name), el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'))
+		: el('span', {class: 'tag stamp-tag'}, stampLabel(name)));
+
+	// O "?" ao lado do stamp escrito como texto.
+	const stampHelp = (name) => (name === STAMP_30
+		? el('button', {'aria-expanded': 'false', 'aria-label': `${stampLabel(name)}: o que é?`, class: 'finish-help', 'data-finish-kind': 'stamp', type: 'button'},
+			el('span', {'aria-hidden': 'true', class: 'finish-tag-i'}, '?'))
+		: null);
+
 	// Um texto com partes separadas por " · ", com o "?" logo depois do
-	// acabamento.
-	const withFinishHelp = (parts, finish) => parts.filter(Boolean).flatMap((part, i) => [i ? ' · ' : null, part, part === finish ? finishHelp(finish) : null]);
+	// acabamento e do Stamp 30 anos.
+	const withFinishHelp = (parts, finish) => parts.filter(Boolean).flatMap((part, i) => [
+		i ? ' · ' : null,
+		part,
+		part === finish ? finishHelp(finish) : part === stampLabel(STAMP_30) ? stampHelp(STAMP_30) : null,
+	]);
 
 	// Uma cartinha desenhada: moldura, ilustração e duas linhas de texto; o
 	// brilho (.finish-shine) vai na ilustração (Holo) ou na moldura
@@ -280,7 +307,9 @@
 
 		node.replaceChildren(
 			el('p', {class: 'finish-pop-title'}, FINISH_HELP[kind].title),
-			el('div', {class: 'finish-pop-cards'}, miniCard('holo', kind === 'holo'), miniCard('reverse', kind === 'reverse')),
+			kind === 'stamp'
+				? el('img', {alt: 'O stamp dos 30 anos no canto da ilustração de uma carta: o rosto do Pikachu com 3 e 0 nas bochechas.', class: 'finish-pop-stamp', height: '180', src: 'assets/stamp-30-anos.webp', width: '280'})
+				: el('div', {class: 'finish-pop-cards'}, miniCard('holo', kind === 'holo'), miniCard('reverse', kind === 'reverse')),
 			el('p', {class: 'finish-pop-text'}, FINISH_HELP[kind].text)
 		);
 		node.hidden = false;
@@ -1086,7 +1115,7 @@
 			['Raridade', group.rarity],
 			['Estado', [...group.conditions].join(', ')],
 			['Acabamento', group.finish ? [shineName(group.finish) || 'Normal', finishHelp(shineName(group.finish))] : null],
-			['Stamp', stampNames(group.cardId, group.finish).join(', ')],
+			['Stamp', stampNames(group.cardId, group.finish).length ? stampNames(group.cardId, group.finish).flatMap((name, i) => [i ? ', ' : null, name, stampHelp(name)]) : null],
 			['Disponível', available(group.copies.length)],
 		].filter(([, value]) => value);
 

@@ -5,7 +5,8 @@
 //
 // Covers: a Holo or Reverse Holo tag is a button and other finishes stay a
 // plain tag; every 30 anos card carries its own one-line Stamp tag, apart
-// from the shine tag, and the card page lists them apart; tapping a tag on
+// from the shine tag, with its own explainer showing the real stamp, and
+// the card page and the cart list them apart; tapping a tag on
 // a phone opens the explainer without opening the card, with the right
 // title and the right drawn card highlighted, inside the screen; tapping it
 // again, tapping outside, and Escape close it; the card page's tag, facts
@@ -155,9 +156,9 @@ try {
 		const tags = (name) => page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag');
 		const texts = async (name) => (await tags(name).allTextContents()).map(plain);
 
-		assert.deepEqual(await texts('Lugia'), ['Holo?', 'Stamp 30 anos'], 'a Holo common recorded without the stamp');
-		assert.deepEqual(await texts('Mew ex'), ['Holo?', 'Stamp 30 anos'], 'a Holo whose finish names the stamp');
-		assert.deepEqual(await texts('Pikachu'), ['Stamp 30 anos'], 'a Normal 30 anos card');
+		assert.deepEqual(await texts('Lugia'), ['Holo?', 'Stamp 30 anos?'], 'a Holo common recorded without the stamp');
+		assert.deepEqual(await texts('Mew ex'), ['Holo?', 'Stamp 30 anos?'], 'a Holo whose finish names the stamp');
+		assert.deepEqual(await texts('Pikachu'), ['Stamp 30 anos?'], 'a Normal 30 anos card');
 		assert.equal(await tags('Luxray').filter({hasText: 'Stamp'}).count(), 0, 'no stamp outside the 30 anos set');
 		assert.equal(await page.locator('.finish-tags').filter({hasText: /carimbo/i}).count(), 0);
 
@@ -180,10 +181,62 @@ try {
 
 		assert.match(facts, /Acabamento ?Holo/);
 		assert.match(facts, /Stamp ?30 anos/);
-		assert.deepEqual((await page.locator('.card-detail .finish-tags .tag').allTextContents()).map(plain), ['Holo?', 'Stamp 30 anos']);
+		assert.deepEqual((await page.locator('.card-detail .finish-tags .tag').allTextContents()).map(plain), ['Holo?', 'Stamp 30 anos?']);
 		assert.equal((await page.title()).includes('carimbo'), false, 'the page title drops the stamp');
+
+		await page.locator('.card-facts .finish-help[data-finish-kind="stamp"]').tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Stamp 30 anos');
+		await page.locator('h1').tap();
+		await page.locator('.buy-box .buy-add').first().tap();
+		await page.goto(`${ORIGIN}/pedido.html`);
+
+		const cartStamp = page.locator('.cart-meta .finish-help[data-finish-kind="stamp"]');
+
+		await cartStamp.waitFor();
+		await cartStamp.tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Stamp 30 anos');
+		await page.evaluate(() => localStorage.removeItem('hotaru.cart'));
 		await page.goto(`${ORIGIN}/avulsas.html`);
 		await page.locator('.card-item h3', {hasText: 'Lugia'}).first().waitFor();
+	});
+
+	await check('the Stamp 30 anos tag opens its own explainer with the real stamp', async () => {
+		const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Lugia'})}).first().locator('.stamp-tag');
+
+		assert.equal(await tag.getAttribute('data-finish-kind'), 'stamp');
+		await tag.scrollIntoViewIfNeeded();
+		await tag.tap();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(new URL(page.url()).pathname, '/avulsas.html');
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Stamp 30 anos');
+		assert.match(plain(await page.locator('.finish-pop-text').textContent()), /3 e 0 nas bochechas/);
+		assert.equal(await page.locator('#finish-pop .finish-mini').count(), 0, 'no drawn cards for the stamp');
+		await page.waitForFunction(() => document.querySelector('.finish-pop-stamp')?.complete);
+		assert.equal(await page.locator('.finish-pop-stamp').evaluate((img) => img.naturalWidth), 280, 'the stamp picture loads');
+		await insideScreen(page, 'stamp explainer');
+
+		if (SHOTS) {
+			await page.screenshot({path: join(SHOTS, 'phone-stamp-pop.png')});
+		}
+
+		await page.locator('h1').tap();
+		assert.ok(await page.locator('#finish-pop').isHidden());
+	});
+
+	await check('the Stamp tag with its ? stays on one line at 360px too', async () => {
+		for (const width of [390, 360]) {
+			await page.setViewportSize({height: 844, width});
+
+			const tags = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Lugia'})}).first().locator('.finish-tags .tag');
+			const stamp = await tags.nth(1).boundingBox();
+			const shine = await tags.nth(0).boundingBox();
+
+			assert.ok(stamp.height <= shine.height + 1, `at ${width}px the Stamp tag wraps (${stamp.height}px against ${shine.height}px)`);
+		}
+
+		await page.setViewportSize({height: 844, width: 390});
 	});
 
 	await check('tapping a Reverse Holo tag opens the explainer and stays on the page', async () => {
@@ -312,10 +365,11 @@ try {
 
 		await page.goto(`${ORIGIN}/kit.html?id=${KIT}`);
 
-		const kitHelp = page.locator('.kit-card-meta .finish-help');
+		const kitHelp = page.locator('.kit-card-meta .finish-help[data-finish-kind="holo"]');
 
 		await kitHelp.waitFor();
 		assert.equal(await kitHelp.count(), 1, 'only the Holo card in the kit');
+		assert.equal(await page.locator('.kit-card-meta .finish-help[data-finish-kind="stamp"]').count(), 2, 'both 30 anos cards in the kit');
 		await kitHelp.scrollIntoViewIfNeeded();
 		await kitHelp.tap();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
