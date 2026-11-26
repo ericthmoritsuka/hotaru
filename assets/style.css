@@ -1125,6 +1125,9 @@ section { padding: 76px 0; }
   margin-bottom: 14px;
 }
 
+/* Com o filtro Região, que só aparece quando o TCGdex responde. */
+.card-filters.has-region { grid-template-columns: 2fr 1fr 1fr 1fr 1fr; }
+
 .card-filters input,
 .card-filters select {
   min-width: 0;
@@ -1181,7 +1184,7 @@ section { padding: 76px 0; }
 .card-back { font-size: 0.85rem; font-weight: 600; color: var(--gold-dk); text-decoration: none; }
 
 @media (max-width: 1000px) {
-  .card-filters { grid-template-columns: 1fr 1fr; }
+  .card-filters, .card-filters.has-region { grid-template-columns: 1fr 1fr; }
   .card-filters .card-search { grid-column: 1 / -1; }
 }
 
