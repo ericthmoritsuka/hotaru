@@ -732,13 +732,18 @@
 		setName: row.set_name || null,
 	});
 
+	// Uma carta do catálogo: do Eric (single) ou de outra pessoa, consignada
+	// (consigned; plans/hotaru-consignment-plan.md no card tracker). O
+	// comprador vê as duas do mesmo jeito.
+	const isCardRow = (row) => row.kind === 'single' || row.kind === 'consigned';
+
 	// Uma carta à venda por carta, idioma e acabamento, com quantas cópias
 	// há, os estados delas e o menor preço.
 	function groupCards(rows) {
 		const groups = new Map();
 
 		for (const row of rows) {
-			if (row.kind !== 'single' || !row.card_id) {
+			if (!isCardRow(row) || !row.card_id) {
 				continue;
 			}
 

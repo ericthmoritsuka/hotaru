@@ -425,13 +425,18 @@ const fold = (text) => String(text || '').normalize('NFKD').replace(/[̀-ͯ]/g, 
 const cardKey = (item) => `card|${item.card_id}|${item.language || ''}|${item.finish || ''}`;
 const itemKey = (item) => (item.kind === 'card' ? cardKey(item) : item.kind === 'set' ? `set|${item.set_name}` : `product|${item.product_id}`);
 
+// Uma carta do catálogo: do Eric (single) ou de outra pessoa, consignada
+// (consigned; plans/hotaru-consignment-plan.md no card tracker). O
+// comprador vê as duas do mesmo jeito.
+const isCardRow = (row) => row.kind === 'single' || row.kind === 'consigned';
+
 // O catálogo em anúncios (carta + idioma + acabamento) e em coleções, como
 // o site os mostra.
 function catalogEntries(rows) {
 	const entries = new Map();
 
 	for (const row of rows) {
-		if (row.kind !== 'single' || !row.card_id) {
+		if (!isCardRow(row) || !row.card_id) {
 			continue;
 		}
 
