@@ -459,10 +459,21 @@
 			: el('span', {class: cls}, badge.label);
 	}
 
-	function finishTags(group) {
+	// Na foto de um tile, só o brilho (Holo, Reverse Holo...), para as etiquetas
+	// não taparem o nome da carta; a página da carta mostra a pilha inteira.
+	function finishTags(group, {tile = false} = {}) {
 		const badges = [...badgesOf(readFinish(group.finish, group.cardId, group.rarity)), ...markBadges(group)];
+		const shown = tile ? badges.filter((badge) => badge.shine) : badges;
 
-		return badges.length ? el('div', {class: 'finish-tags'}, badges.map(badgeTag)) : null;
+		return shown.length ? el('div', {class: 'finish-tags'}, shown.map(badgeTag)) : null;
+	}
+
+	// O resto das etiquetas de um tile, como texto abaixo da coleção: edição,
+	// stamp, promo, tamanho, raridade e estado, cada uma com o seu "?".
+	function cardMarks(group) {
+		const badges = [...badgesOf(readFinish(group.finish, group.cardId, group.rarity)).filter((badge) => !badge.shine), ...markBadges(group)];
+
+		return badges.length ? el('p', {class: 'card-marks'}, withFinishHelp([], badges)) : null;
 	}
 
 	// O mesmo balão onde a etiqueta aparece como texto (a ficha e as linhas
@@ -556,7 +567,9 @@
 		const top = below + height > window.innerHeight - gutter && spot.top - 8 - height >= gutter ? spot.top - 8 - height : below;
 
 		node.style.left = `${Math.max(left, gutter)}px`;
-		node.style.top = `${top}px`;
+		// Nem embaixo nem em cima cabendo, o balão fica a uma margem da borda
+		// da tela, em vez de encostar nela.
+		node.style.top = `${Math.max(gutter, Math.min(top, window.innerHeight - height - gutter))}px`;
 	}
 
 	function openFinishPop(button) {
@@ -640,6 +653,13 @@
 				closeFinishPopSoon();
 			}
 		});
+		// Um balão aberto pelo teclado fecha quando o foco vai para outro lugar
+		// (o Tab seguia para a etiqueta de baixo e deixava o balão da de cima).
+		document.addEventListener('focusin', (event) => {
+			if (finishPop.button && event.target !== finishPop.button && !(finishPop.node && finishPop.node.contains(event.target))) {
+				closeFinishPop();
+			}
+		});
 		document.addEventListener('keydown', (event) => {
 			if (event.key === 'Escape' && finishPop.button) {
 				const button = finishPop.button;
@@ -675,6 +695,10 @@
 	const languageName = (code) => LANGUAGES[String(code || '').toLowerCase()] || (code ? String(code).toUpperCase() : '');
 
 	const brl = (value) => {
+		if (!Number.isFinite(Number(value))) {
+			return 'R$ ?';
+		}
+
 		const [whole, cents] = (Math.round(Number(value) * 100) / 100).toFixed(2).split('.');
 
 		return `R$ ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${cents}`;
@@ -709,6 +733,14 @@
 		}
 
 		return node;
+	}
+
+	// Uma foto que não carrega vira o quadro com o nome, o mesmo das cartas
+	// sem foto, em vez de um espaço vazio com o texto alternativo escuro.
+	function withFallback(img, text = null) {
+		img.addEventListener('error', () => img.replaceWith(el('span', {class: `${img.className} card-pic-none`}, text)), {once: true});
+
+		return img;
 	}
 
 	// A descrição de um selado aceita um Markdown mínimo, que vira nós da
@@ -782,13 +814,24 @@
 		return blocks;
 	}
 
+	// Um prazo para uma chamada de rede: sem ele, uma resposta que não chega
+	// deixa a página em "Carregando" e o botão de fechar o pedido desligado
+	// para sempre. Navegadores sem AbortSignal.timeout esperam como antes.
+	const timeoutSignal = (ms) => (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined);
+	const RPC_TIMEOUT_MS = 15000;
+	const TCGDEX_TIMEOUT_MS = 8000;
+
 	// Chama uma função pública do Supabase. Lança o erro do banco, com a
-	// mensagem dele, quando a resposta não é 2xx.
+	// mensagem dele, quando a resposta não é 2xx; sem resposta no prazo, lança
+	// um erro com network: true.
 	async function rpc(name, args = {}) {
 		const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
 			body: JSON.stringify(args),
 			headers: {apikey: SUPABASE_KEY, 'Content-Type': 'application/json'},
 			method: 'POST',
+			signal: timeoutSignal(RPC_TIMEOUT_MS),
+		}).catch((err) => {
+			throw Object.assign(new Error(`${name}: sem resposta`), {network: true, cause: err});
 		});
 		const body = await response.json().catch(() => null);
 
@@ -826,7 +869,9 @@
 		try {
 			const value = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
 
-			return Array.isArray(value) ? value.filter((item) => item && typeof item.id === 'string') : [];
+			// Uma entrada sem preço de verdade (um localStorage mexido à mão)
+			// sairia como "R$ NaN" no carrinho.
+			return Array.isArray(value) ? value.filter((item) => item && typeof item.id === 'string' && typeof item.price === 'number' && Number.isFinite(item.price)) : [];
 		}
 		catch {
 			return [];
@@ -842,6 +887,68 @@
 		}
 
 		drawCartCount(items);
+		document.dispatchEvent(new Event(CART_EVENT));
+	}
+
+	// Tudo que mostra o carrinho (os botões Adicionar, as linhas de compra,
+	// o contador) se redesenha quando ele muda, nesta página ou em outra aba
+	// (o evento storage). Um botão que saiu da página deixa de ouvir.
+	const CART_EVENT = 'hotaru:cart';
+
+	function onCart(node, redraw) {
+		const run = () => {
+			if (!node.isConnected) {
+				document.removeEventListener(CART_EVENT, run);
+
+				return;
+			}
+
+			redraw();
+		};
+
+		document.addEventListener(CART_EVENT, run);
+	}
+
+	// O limite de cartas por pedido, para os botões o dizerem em vez de
+	// esperarem o toque.
+	const cartFull = () => cardCount(readCart()) >= MAX_ORDER;
+
+	// Relê o catálogo e redesenha o que mudou; start() o liga (a leitura de
+	// uma página aberta há tempo, e antes de pôr uma cópia no carrinho).
+	let refreshNow = () => {};
+
+	// Um aviso curto no pé da tela, para o que acontece fora do botão apertado.
+	let toastTimer = 0;
+
+	function toast(text) {
+		let node = document.getElementById('toast');
+
+		if (!node) {
+			node = el('div', {class: 'toast', id: 'toast', role: 'status'});
+			document.body.append(node);
+		}
+
+		node.textContent = text;
+		node.hidden = false;
+		clearTimeout(toastTimer);
+		toastTimer = setTimeout(() => {
+			node.hidden = true;
+		}, 6000);
+	}
+
+	// Confere no Supabase, na hora de pôr no carrinho, quais destas cópias
+	// ainda estão à venda (uma página aberta há tempo pode mostrar cartas que
+	// outra pessoa já reservou). Sem resposta, deixa passar: o carrinho
+	// confere de novo.
+	async function liveOnly(ids) {
+		try {
+			const states = await rpc('listing_status', {ids});
+
+			return ids.filter((id) => (states || {})[id] === 'available');
+		}
+		catch {
+			return ids;
+		}
 	}
 
 	// As cópias que o carrinho leva: as avulsas e as de cada kit.
@@ -1012,7 +1119,19 @@
 		}
 	}
 
+	// Uma coleção que ninguém pediu em 30 dias sai do guardado, para ele não
+	// crescer sem fim.
+	const DEX_PRUNE_MS = 30 * 24 * 60 * 60 * 1000;
+
 	function writeDexCache(cache) {
+		const now = Date.now();
+
+		for (const [setId, saved] of Object.entries(cache)) {
+			if (!saved || now - Number(saved.seen || saved.at || 0) > DEX_PRUNE_MS) {
+				delete cache[setId];
+			}
+		}
+
 		try {
 			localStorage.setItem(DEX_KEY, JSON.stringify(cache));
 		}
@@ -1024,7 +1143,7 @@
 	// {id da carta: [números]} de uma coleção. Lança quando o TCGdex falha.
 	async function readSetDex(setId) {
 		const query = `{ cards(filters: {id: ${JSON.stringify(`${setId}-`)}}, pagination: {page: 1, itemsPerPage: 1000}) { id dexId } }`;
-		const response = await fetch(TCGDEX_GRAPHQL, {body: JSON.stringify({query}), headers: {'content-type': 'application/json'}, method: 'POST'});
+		const response = await fetch(TCGDEX_GRAPHQL, {body: JSON.stringify({query}), headers: {'content-type': 'application/json'}, method: 'POST', signal: timeoutSignal(TCGDEX_TIMEOUT_MS)});
 
 		if (!response.ok) {
 			throw new Error(`TCGdex ${response.status}`);
@@ -1069,11 +1188,23 @@
 
 		await Promise.all([...bySet].map(async ([setId, members]) => {
 			const saved = cache[setId];
-			const fresh = saved && saved.cards && now - Number(saved.at || 0) < DEX_KEEP_MS && members.every((group) => Object.hasOwn(saved.cards, group.cardId));
+			// Uma carta que o TCGdex não devolveu da última vez também conta como
+			// lida (misses), em vez de pedir a coleção toda a cada visita.
+			const known = (group) => Object.hasOwn(saved.cards, group.cardId) || now - Number((saved.misses || {})[group.cardId] || 0) < DEX_KEEP_MS;
+			const fresh = saved && saved.cards && now - Number(saved.at || 0) < DEX_KEEP_MS && members.every(known);
 
 			if (!fresh) {
 				try {
-					cache[setId] = {at: now, cards: await readSetDex(setId)};
+					const cards = await readSetDex(setId);
+					const misses = {...((saved && saved.misses) || {})};
+
+					for (const group of members) {
+						if (!Object.hasOwn(cards, group.cardId)) {
+							misses[group.cardId] = now;
+						}
+					}
+
+					cache[setId] = {at: now, cards, misses, seen: now};
 				}
 				catch {
 					// Sem rede ou TCGdex fora do ar: usa o que estiver guardado.
@@ -1085,6 +1216,8 @@
 			if (!cards) {
 				return;
 			}
+
+			cache[setId].seen = now;
 
 			answered = true;
 
@@ -1110,13 +1243,14 @@
 	function shot(group, {link = true} = {}) {
 		const url = pictureUrl(group.imagePath);
 		const inner = url
-			? el('img', {alt: `${fullName(group)}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+			? withFallback(el('img', {alt: `${fullName(group)}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url}), group.name)
 			: el('span', {class: 'card-pic card-pic-none'}, group.name);
 
-		// No tile, a etiqueta fica fora do link da foto, irmã dele no
-		// article (.card-item, que a posiciona), porque ela pode ser um botão.
+		// No tile, a etiqueta fica fora do link da foto, irmã dele num
+		// invólucro (.shot-wrap, que a posiciona no pé da foto), porque ela
+		// pode ser um botão.
 		return link
-			? [finishTags(group), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner)]
+			? el('div', {class: 'shot-wrap'}, finishTags(group, {tile: true}), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner))
 			: el('div', {class: 'shot card-shot'}, finishTags(group), inner);
 	}
 
@@ -1148,23 +1282,33 @@
 			const inCart = cartIds();
 			const free = group.copies.filter((row) => !inCart.has(row.id));
 			const there = group.copies.length - free.length;
+			// No limite do pedido, todo botão que ainda adicionaria algo diz isso.
+			const capped = free.length > 0 && cartFull();
 
-			button.disabled = !free.length;
+			button.disabled = !free.length || capped;
 			button.classList.toggle('quick-in', there > 0);
-			button.setAttribute('aria-label', free.length ? `Adicionar ${fullName(group)} ao carrinho` : `${fullName(group)}: todas no carrinho`);
-			button.replaceChildren(...label(there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
+			button.setAttribute('aria-label', capped ? `Um pedido leva até ${MAX_ORDER} cartas` : free.length ? `Adicionar ${fullName(group)} ao carrinho` : `${fullName(group)}: todas no carrinho`);
+			button.replaceChildren(...label(capped ? `Limite de ${MAX_ORDER}` : there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
 		}
 
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
 			const inCart = cartIds();
-			const next = group.copies.find((row) => !inCart.has(row.id));
+			const free = group.copies.filter((row) => !inCart.has(row.id));
 
-			if (!next) {
+			if (!free.length || cartFull()) {
 				return;
 			}
 
-			if (cardCount(readCart()) >= MAX_ORDER) {
-				button.textContent = `Até ${MAX_ORDER} cartas`;
+			// Confere se a cópia ainda está à venda antes de pôr no carrinho.
+			button.disabled = true;
+
+			const live = new Set(await liveOnly(free.map((row) => row.id)));
+			const next = free.find((row) => live.has(row.id));
+
+			if (!next) {
+				draw();
+				toast('Essa carta acabou de ser reservada por outra pessoa.');
+				refreshNow();
 
 				return;
 			}
@@ -1172,6 +1316,7 @@
 			writeCart([...readCart(), cartItem(next)]);
 			draw();
 		});
+		onCart(button, draw);
 		draw();
 
 		return button;
@@ -1187,6 +1332,7 @@
 				el('span', {class: 'kind'}, group.featured ? featuredMark() : null, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
 				el('h3', null, el('a', {'aria-label': finishSummary(group) ? fullName(group) : null, href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
+				cardMarks(group),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
 				el('div', {class: 'card-foot'},
 					el('p', {class: 'card-count'}, available(group.copies.length)),
@@ -1205,6 +1351,17 @@
 	};
 
 	const message = (text, cls = 'card-note') => el('p', {class: cls, role: 'status'}, text);
+
+	// O último passo do caminho de uma página de produto é o nome dele
+	// (revisão de QA, QA-28); até a página carregar, fica "Carta", "Kit" ou
+	// "Selado".
+	function setCrumb(text) {
+		const node = document.querySelector('[data-crumb]');
+
+		if (node) {
+			node.textContent = text;
+		}
+	}
 
 	// -------------------------------------------------------- featured
 
@@ -1261,7 +1418,7 @@
 		return el('article', {class: 'product card-item set-item'},
 			el('a', {'aria-hidden': 'true', class: 'shot card-shot set-shot', href: setHref(pick.set), onclick: open, tabindex: '-1'},
 				url
-					? el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+					? withFallback(el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url}), pick.set)
 					: el('span', {class: 'card-pic card-pic-none'}, pick.set)),
 			el('div', {class: 'meta'},
 				el('span', {class: 'kind'}, featuredMark(), 'Coleção'),
@@ -1317,9 +1474,10 @@
 	}
 
 	// Um carrossel de rolagem com encaixe: arrasta no celular, setas no
-	// computador e pontos embaixo. Passa sozinho devagar e para de vez quando
-	// a pessoa mexe nele, ou desde o começo quando o aparelho pede menos
-	// movimento.
+	// computador e pontos embaixo. Passa sozinho devagar, mas espera enquanto
+	// o mouse ou o foco estão nele, para de vez quando a pessoa mexe nele, e
+	// tem um botão Pausar à vista (WCAG 2.2.2) que também o retoma; um
+	// aparelho que pede menos movimento não o vê passar nem ganha o botão.
 	//
 	// Os pontos (Eric, 2026-11-25) ficam no lugar da barra de rolagem do
 	// navegador, que fica escondida: um por página, e o da página atual é um
@@ -1331,9 +1489,14 @@
 		const prev = el('button', {'aria-label': 'Cartas anteriores', class: 'carousel-arrow carousel-prev', type: 'button'}, '‹');
 		const next = el('button', {'aria-label': 'Próximas cartas', class: 'carousel-arrow carousel-next', type: 'button'}, '›');
 		const dots = el('div', {'aria-label': 'Páginas do carrossel', class: 'carousel-dots', role: 'group'});
+		const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const playIcon = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+		const pauseIcon = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1h3v10H2zM7 1h3v10H7z" fill="currentColor"/></svg>';
+		const stage = el('div', {class: 'carousel-stage'}, prev, track, next);
+		const toggle = el('button', {class: 'carousel-pause', hidden: calm || slides.length < 2, type: 'button'});
 		const box = el('div', {'aria-label': label, 'aria-roledescription': 'carrossel', class: 'carousel', role: 'region'},
-			el('div', {class: 'carousel-stage'}, prev, track, next),
-			dots);
+			stage,
+			el('div', {class: 'carousel-bar'}, toggle, dots));
 		let timer = null;
 		let pages = 0;
 
@@ -1382,12 +1545,56 @@
 			next.disabled = atEnd();
 		}
 
+		// O botão mostra o que ele faz agora: Pausar enquanto passa sozinho,
+		// Continuar depois que parou (por ele ou por quem mexeu no carrossel).
+		function drawToggle() {
+			const playing = Boolean(timer);
+
+			toggle.innerHTML = playing ? pauseIcon : playIcon;
+			toggle.append(playing ? 'Pausar' : 'Continuar');
+			toggle.setAttribute('aria-label', playing ? 'Pausar a passagem automática do carrossel' : 'Continuar a passagem automática do carrossel');
+			toggle.setAttribute('aria-pressed', playing ? 'false' : 'true');
+		}
+
 		function stop() {
 			if (timer) {
 				clearInterval(timer);
 				timer = null;
 			}
+
+			drawToggle();
 		}
+
+		function play() {
+			if (timer || calm || slides.length < 2) {
+				return;
+			}
+
+			timer = setInterval(() => {
+				if (!box.isConnected) {
+					stop();
+
+					return;
+				}
+
+				// Espera, sem parar, enquanto o mouse ou o foco estão no carrossel.
+				// O botão Pausar fica de fora: quem acabou de apertar Continuar
+				// espera ver o carrossel andar.
+				if (document.hidden || stage.matches(':hover') || stage.matches(':focus-within')) {
+					return;
+				}
+
+				if (atEnd()) {
+					track.scrollTo({behavior: 'smooth', left: 0});
+				}
+				else {
+					go(currentPage() + 1);
+				}
+			}, CAROUSEL_EVERY_MS);
+			drawToggle();
+		}
+
+		toggle.addEventListener('click', () => (timer ? stop() : play()));
 
 		prev.addEventListener('click', () => {
 			stop();
@@ -1400,39 +1607,44 @@
 		track.addEventListener('scroll', draw, {passive: true});
 		window.addEventListener('resize', draw, {passive: true});
 
-		for (const type of ['pointerdown', 'wheel', 'keydown', 'focusin', 'touchstart']) {
-			box.addEventListener(type, stop, {passive: true});
-		}
-
-		const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-		if (!calm && slides.length > 1) {
-			timer = setInterval(() => {
-				if (!box.isConnected) {
+		// Quem arrasta, gira a roda ou usa o teclado no carrossel já o está
+		// conduzindo: ele para (o botão vira Continuar). O foco sozinho só o
+		// faz esperar.
+		for (const type of ['pointerdown', 'wheel', 'keydown', 'touchstart']) {
+			box.addEventListener(type, (event) => {
+				// O próprio botão Pausar cuida do que faz.
+				if (!toggle.contains(event.target)) {
 					stop();
-
-					return;
 				}
-
-				if (document.hidden || box.matches(':hover')) {
-					return;
-				}
-
-				if (atEnd()) {
-					track.scrollTo({behavior: 'smooth', left: 0});
-				}
-				else {
-					go(currentPage() + 1);
-				}
-			}, CAROUSEL_EVERY_MS);
+			}, {passive: true});
 		}
 
+		play();
 		requestAnimationFrame(draw);
 
 		return box;
 	}
 
 	// ------------------------------------------------------- all cards
+
+	// avulsas.html guarda no endereço a busca, os filtros e a ordem (revisão
+	// de QA de 2026-11-27), para o botão Voltar e um link compartilhado
+	// trazerem a mesma lista. A grade mostra uma página por vez, e quantas
+	// páginas estão abertas fica no estado do histórico, junto da rolagem.
+	// A ordem de abertura é a das cartas mais caras primeiro.
+	const PAGE_SIZE = 24;
+	const DEFAULT_SORT = 'price-desc';
+	const SORT_PARAMS = {name: 'nome', new: 'recentes', 'price-asc': 'menor-preco', 'price-desc': 'maior-preco', set: 'colecao'};
+	const SORT_BY_PARAM = Object.fromEntries(Object.entries(SORT_PARAMS).map(([key, name]) => [name, key]));
+
+	function keepHistory(extra) {
+		try {
+			window.history.replaceState({...(window.history.state || {}), ...extra}, '');
+		}
+		catch {
+			// O navegador limita as trocas do histórico: o endereço fica como estava.
+		}
+	}
 
 	function all(root, groups, featured = []) {
 		if (!groups.length) {
@@ -1441,23 +1653,28 @@
 			return;
 		}
 
+		const params = new URLSearchParams(window.location.search);
+		const param = (name) => (params.get(name) || '').trim();
 		const sets = [...new Set(groups.map((group) => group.setName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 		const languages = [...new Set(groups.map((group) => group.language).filter(Boolean))].sort((a, b) => languageName(a).localeCompare(languageName(b), 'pt-BR'));
 		const search = el('input', {'aria-label': 'Buscar cartas', class: 'card-search', placeholder: 'Buscar por nome ou coleção', type: 'search'});
-		const setSelect = el('select', {'aria-label': 'Coleção'}, el('option', {value: ''}, 'Todas as coleções'), sets.map((name) => el('option', {value: name}, name)));
+		const setSelect = el('select', {'aria-label': 'Coleção', class: 'card-set-select'}, el('option', {value: ''}, 'Todas as coleções'), sets.map((name) => el('option', {value: name}, name)));
 		const languageSelect = el('select', {'aria-label': 'Idioma'}, el('option', {value: ''}, 'Todos os idiomas'), languages.map((code) => el('option', {value: code}, languageName(code))));
-		// Região aparece quando o TCGdex responde (addRegions); até lá, e se
-		// ele não responder, a página fica como era.
-		const regionSelect = el('select', {'aria-label': 'Região', class: 'card-region', hidden: true}, el('option', {value: ''}, 'Todas as regiões'));
+		// Região aparece quando o TCGdex responde (addRegions); o lugar dela
+		// fica guardado, desligado, enquanto ele não responde, para a fila de
+		// filtros não pular. Se ele não responder, a página fica como era.
+		const regionSelect = el('select', {'aria-label': 'Região', 'aria-busy': 'true', class: 'card-region', disabled: true}, el('option', {value: ''}, 'Todas as regiões'));
 		const sortSelect = el('select', {'aria-label': 'Ordenar'},
-			el('option', {value: 'set'}, 'Por coleção'),
-			el('option', {value: 'price-asc'}, 'Menor preço'),
 			el('option', {value: 'price-desc'}, 'Maior preço'),
+			el('option', {value: 'price-asc'}, 'Menor preço'),
 			el('option', {value: 'new'}, 'Mais recentes'),
+			el('option', {value: 'set'}, 'Por coleção'),
 			el('option', {value: 'name'}, 'Nome (A–Z)')
 		);
 		const count = el('p', {class: 'card-total', role: 'status'});
+		const notice = el('p', {class: 'card-note card-notice', role: 'status'});
 		const grid = el('div', {class: 'products cards-grid'});
+		const more = el('button', {class: 'btn btn-navy card-more', hidden: true, type: 'button'});
 		const SORTS = {
 			name: (a, b) => a.name.localeCompare(b.name, 'pt-BR'),
 			new: (a, b) => b.newest.localeCompare(a.newest),
@@ -1470,52 +1687,173 @@
 			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish, finishSummary(group)].filter(Boolean).join(' '));
 		}
 
-		function draw() {
+		// O que o endereço pede, sem diferenciar maiúsculas.
+		search.value = param('busca');
+		setSelect.value = sets.find((name) => fold(name) === fold(param('colecao'))) || '';
+		languageSelect.value = languages.find((code) => code === param('idioma').toLowerCase()) || '';
+		sortSelect.value = SORT_BY_PARAM[param('ordem').toLowerCase()] || DEFAULT_SORT;
+
+		const wantedRegion = param('regiao').toLowerCase();
+		// loading: o endereço pede uma região e o TCGdex ainda não respondeu,
+		// então a lista espera em vez de mostrar tudo e encolher depois.
+		let regionState = wantedRegion ? 'loading' : 'idle';
+		let shown = Math.max(PAGE_SIZE, Number(window.history.state && window.history.state.shown) || PAGE_SIZE);
+		let urlTimer = 0;
+
+		function writeUrl() {
+			const url = new URL(window.location.href);
+			const put = (name, value) => (value ? url.searchParams.set(name, value) : url.searchParams.delete(name));
+
+			put('busca', search.value.trim());
+			put('colecao', setSelect.value);
+			put('idioma', languageSelect.value);
+			put('regiao', regionSelect.value || (regionState === 'idle' || regionState === 'ready' ? '' : wantedRegion));
+			put('ordem', sortSelect.value === DEFAULT_SORT ? '' : SORT_PARAMS[sortSelect.value]);
+
+			if (url.href !== window.location.href) {
+				try {
+					window.history.replaceState({...(window.history.state || {}), shown}, '', url);
+				}
+				catch {
+					// O navegador limita as trocas do histórico: o endereço fica como estava.
+				}
+			}
+		}
+
+		function filtered() {
 			const words = fold(search.value).split(/\s+/).filter(Boolean);
-			const shown = groups
+
+			return groups
 				.filter((group) => (!setSelect.value || group.setName === setSelect.value)
 					&& (!languageSelect.value || group.language === languageSelect.value)
 					&& (!regionSelect.value || (group.regions || []).includes(regionSelect.value))
 					&& words.every((word) => group.search.includes(word)))
 				.sort(SORTS[sortSelect.value] || SORTS.set);
-
-			count.textContent = shown.length === 1 ? '1 carta' : `${shown.length} cartas`;
-			grid.replaceChildren(...(shown.length ? shown.map(tile) : [message('Nenhuma carta com esses filtros.')]));
 		}
 
-		for (const control of [search, setSelect, languageSelect, regionSelect, sortSelect]) {
-			control.addEventListener(control === search ? 'input' : 'change', draw);
+		function clearFilters() {
+			search.value = '';
+			setSelect.value = '';
+			languageSelect.value = '';
+			regionSelect.value = '';
+			change();
+			search.focus();
 		}
 
-		// avulsas.html?colecao=<nome> abre já filtrada, como os destaques de
-		// coleção da home levam.
-		const wanted = new URLSearchParams(window.location.search).get('colecao');
+		// Nada com esses filtros: a mensagem ocupa a grade inteira e mostra o
+		// caminho de volta.
+		const empty = () => el('div', {class: 'card-empty', role: 'status'},
+			el('p', null, 'Nenhuma carta com esses filtros. Tente outro nome ou limpe os filtros.'),
+			el('p', null, 'Procurando uma carta específica? Escreva para ', el('a', {href: `mailto:${EMAIL}`}, EMAIL), '.'),
+			el('button', {class: 'btn btn-navy', onclick: clearFilters, type: 'button'}, 'Limpar filtros'));
 
-		if (wanted && sets.includes(wanted)) {
-			setSelect.value = wanted;
+		function drawMore(list) {
+			const left = list.length - shown;
+
+			more.hidden = left <= 0;
+			count.textContent = `${list.length === 1 ? '1 carta' : `${list.length} cartas`}${left > 0 ? `, mostrando as primeiras ${shown}` : ''}`;
+
+			if (left > 0) {
+				const next = Math.min(PAGE_SIZE, left);
+
+				more.textContent = `Mostrar mais ${next === 1 ? '1 carta' : `${next} cartas`} (de ${list.length})`;
+			}
 		}
 
-		// Uma coleção em destaque, nesta página, só filtra a grade.
+		function draw() {
+			if (regionState === 'loading') {
+				count.textContent = '';
+				more.hidden = true;
+				grid.replaceChildren(el('p', {class: 'card-note card-grid-note', role: 'status'}, 'Carregando as cartas da região…'));
+
+				return;
+			}
+
+			const list = filtered();
+
+			grid.replaceChildren(...(list.length ? list.slice(0, shown).map(tile) : [empty()]));
+			drawMore(list);
+		}
+
+		// Uma mudança de filtro ou de ordem volta à primeira página e guarda o
+		// endereço.
+		function change() {
+			shown = PAGE_SIZE;
+			clearTimeout(urlTimer);
+			writeUrl();
+			draw();
+		}
+
+		more.addEventListener('click', () => {
+			const list = filtered();
+			const next = list.slice(shown, shown + PAGE_SIZE).map(tile);
+
+			shown += PAGE_SIZE;
+			grid.append(...next);
+			drawMore(list);
+			keepHistory({shown});
+
+			const link = next[0] && next[0].querySelector('h3 a');
+
+			if (link) {
+				link.focus({preventScroll: true});
+			}
+		});
+
+		search.addEventListener('input', () => {
+			shown = PAGE_SIZE;
+			draw();
+			clearTimeout(urlTimer);
+			urlTimer = setTimeout(writeUrl, 300);
+		});
+
+		for (const control of [setSelect, languageSelect, regionSelect, sortSelect]) {
+			control.addEventListener('change', change);
+		}
+
+		// Uma coleção em destaque, nesta página, só filtra a grade, e leva os
+		// outros filtros embora, para a lista não ficar vazia sob uma faixa que
+		// anuncia as cartas dela.
 		const openSet = (name) => {
 			search.value = '';
+			languageSelect.value = '';
+			regionSelect.value = '';
 			setSelect.value = name;
-			draw();
+			change();
 			count.scrollIntoView({behavior: 'smooth', block: 'start'});
 		};
 		const picks = featuredCards(groups, featured);
-		const filters = el('div', {class: 'card-filters'}, search, setSelect, languageSelect, regionSelect, sortSelect);
+		const filters = el('div', {class: 'card-filters has-region'}, search, setSelect, languageSelect, regionSelect, sortSelect);
 
 		root.replaceChildren(
 			picks.length ? featuredBand(picks.map((pick) => pickTile(pick, {onOpen: openSet})), 'Em destaque') : '',
 			picks.length ? el('h2', {class: 'featured-title'}, 'Todas as cartas') : '',
-			filters, count, grid
+			filters, notice, count, grid, el('div', {class: 'card-more-box'}, more)
 		);
 		draw();
+
+		// A rolagem de quem volta de uma carta: o navegador não a devolve
+		// sozinho porque a lista chega depois da página.
+		const savedY = Number(window.history.state && window.history.state.y) || 0;
+
+		if (savedY && regionState !== 'loading') {
+			requestAnimationFrame(() => window.scrollTo(0, savedY));
+		}
+
+		if ('scrollRestoration' in window.history) {
+			window.history.scrollRestoration = 'manual';
+		}
+
+		window.addEventListener('pagehide', () => keepHistory({shown, y: window.scrollY}));
 
 		// Com as regiões lidas: o filtro oferece só as regiões que têm carta
 		// à venda, com quantas são, a busca também acha "kanto", e
 		// avulsas.html?regiao=kanto abre já filtrada.
 		addRegions(groups).then((answered) => {
+			if (!regionSelect.isConnected) {
+				return;
+			}
+
 			const counts = new Map();
 
 			for (const group of groups) {
@@ -1524,7 +1862,18 @@
 				}
 			}
 
-			if (!answered || !counts.size || !regionSelect.isConnected) {
+			regionSelect.removeAttribute('aria-busy');
+
+			if (!answered || !counts.size) {
+				regionSelect.hidden = true;
+				filters.classList.remove('has-region');
+
+				if (wantedRegion) {
+					notice.textContent = 'Não foi possível carregar as regiões agora, então a lista mostra todas as cartas.';
+					regionState = 'failed';
+					draw();
+				}
+
 				return;
 			}
 
@@ -1538,15 +1887,20 @@
 
 			regionSelect.append(...REGIONS.filter((region) => counts.has(region.id)).map((region) => el('option', {value: region.id}, `${region.name} (${counts.get(region.id)})`)));
 
-			const wantedRegion = new URLSearchParams(window.location.search).get('regiao');
-
 			if (wantedRegion && counts.has(wantedRegion)) {
 				regionSelect.value = wantedRegion;
 			}
+			else if (wantedRegion) {
+				notice.textContent = 'Não há cartas dessa região à venda agora, então a lista mostra todas as cartas.';
+			}
 
-			regionSelect.hidden = false;
-			filters.classList.add('has-region');
+			regionSelect.disabled = false;
+			regionState = 'ready';
 			draw();
+
+			if (savedY) {
+				requestAnimationFrame(() => window.scrollTo(0, savedY));
+			}
 		});
 	}
 
@@ -1559,7 +1913,7 @@
 		// acabamentos separados) abre o Normal simples, ou o primeiro.
 		const wanted = params.get('a');
 		const group = wanted !== null
-			? same.find((one) => (one.finish || '') === wanted)
+			? same.find((one) => (one.finish || '').toLowerCase() === wanted.toLowerCase())
 			: same.find((one) => plainFinish(one.finish)) || same[0];
 
 		if (!group) {
@@ -1573,6 +1927,7 @@
 		}
 
 		document.title = `${fullName(group)} | Cartas | HOTARU`;
+		setCrumb(group.name);
 
 		// A ficha separa as etiquetas: o brilho no Acabamento, e as marcas
 		// em linhas próprias, cada uma com o seu "?".
@@ -1601,10 +1956,10 @@
 				el('p', {class: 'eyebrow'}, ['Carta avulsa', languageName(group.language)].filter(Boolean).join(' · ')),
 				el('h1', null, group.name),
 				el('p', {class: 'card-price'}, brl(group.price)),
-				factList,
 				buyBox(group),
 				otherFinishes(group, same),
-				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: ela fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				factList,
+				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: vale quem fechar o pedido primeiro. ', el('a', {href: 'pedido.html'}, 'Como funciona'), '.'),
 				el('p', {class: 'card-how'}, 'Dúvidas? ', el('a', {href: mailto(group)}, `Escreva para ${EMAIL}`), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
@@ -1632,10 +1987,16 @@
 		);
 	}
 
+	// O que a linha de compra diz quando tudo dela já está no carrinho, com o
+	// botão para seguir.
+	const inCartLine = (text) => el('div', {class: 'buy-all-in'}, el('p', null, text), el('a', {class: 'btn btn-navy', href: 'pedido.html'}, 'Ir para o carrinho'));
+
 	// Adicionar ao carrinho: uma linha por estado, acabamento e preço, com
 	// quantas cópias ainda não estão no carrinho.
 	function buyBox(group) {
 		const box = el('div', {class: 'buy-box'});
+		// Um só aviso para a caixa, que sobrevive a cada redesenho das linhas.
+		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
 
 		function draw() {
 			const inCart = cartIds();
@@ -1657,6 +2018,8 @@
 				}
 			}
 
+			const single = variants.size === 1;
+			const capped = cartFull();
 			const lines = [...variants.values()].map(({free, row, total}) => {
 				// O brilho e a edição da cópia; o stamp é da coleção, e fica na
 				// ficha.
@@ -1665,7 +2028,7 @@
 				const label = [row.condition, ...words.map((badge) => badge.label)].filter(Boolean).join(' · ') || 'Cópia';
 				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
 					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
-				const button = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+				const button = el('button', {class: 'btn btn-gold buy-add', disabled: capped, onclick: async () => {
 					const n = Number(qty.value) || 1;
 					const cart = readCart();
 
@@ -1675,10 +2038,30 @@
 						return;
 					}
 
-					writeCart([...cart, ...free.slice(0, n).map(cartItem)]);
+					// Confere se as cópias ainda estão à venda antes de pôr no
+					// carrinho (a página pode estar aberta há tempo).
+					button.disabled = true;
+
+					const live = new Set(await liveOnly(free.map((one) => one.id)));
+					const take = free.filter((one) => live.has(one.id)).slice(0, n);
+
+					if (take.length < n) {
+						toast(take.length ? 'Algumas cópias acabaram de ser reservadas por outra pessoa.' : 'Essa carta acabou de ser reservada por outra pessoa.');
+						refreshNow();
+					}
+
+					if (!take.length) {
+						draw();
+
+						return;
+					}
+
+					writeCart([...readCart(), ...take.map(cartItem)]);
 					draw();
-					status.replaceChildren(n === 1 ? 'Adicionada ao carrinho. ' : `${n} adicionadas ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
-				}, type: 'button'}, 'Adicionar ao carrinho');
+					// Quando não sobra cópia, o "Ir para o carrinho" da própria
+					// linha já leva adiante.
+					status.replaceChildren(take.length === 1 ? 'Adicionada ao carrinho.' : `${take.length} adicionadas ao carrinho.`, ...(free.length > take.length ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
+				}, type: 'button'}, capped ? `Limite de ${MAX_ORDER} cartas` : 'Adicionar ao carrinho');
 				const inside = total - free.length;
 
 				return el('div', {class: 'buy-line'},
@@ -1686,19 +2069,18 @@
 						typeof state === 'object' && state
 							? [el('strong', null, state.label), badgeHelp(state), words.length ? [' · ', el('strong', null, words.map((badge) => badge.label).join(' · '))] : null]
 							: el('strong', null, label),
-						words.map(badgeHelp), ` · ${brl(row.price_brl)} · ${available(total)}`),
+						words.map(badgeHelp), single ? ` · ${available(total)}` : ` · ${brl(row.price_brl)} · ${available(total)}`),
 					free.length
 						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
-						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
+						: inCartLine(total === 1 ? 'Esta carta está no seu carrinho.' : `As ${total} cópias estão no seu carrinho.`),
 					inside && free.length ? el('p', {class: 'buy-in'}, inside === 1 ? '1 já está no seu carrinho.' : `${inside} já estão no seu carrinho.`) : null
 				);
 			});
-			const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
-
 			box.replaceChildren(...lines, status);
 		}
 
 		draw();
+		onCart(box, draw);
 
 		return box;
 	}
@@ -1711,7 +2093,7 @@
 
 		for (const lang of langs) {
 			try {
-				const response = await fetch(`${TCGDEX}/${lang}/cards/${encodeURIComponent(group.cardId)}`);
+				const response = await fetch(`${TCGDEX}/${lang}/cards/${encodeURIComponent(group.cardId)}`, {signal: timeoutSignal(TCGDEX_TIMEOUT_MS)});
 
 				if (response.ok) {
 					const card = await response.json();
@@ -1907,7 +2289,14 @@
 	// mostrar mais de um.
 	function pixBlock(order) {
 		const Pix = window.HotaruPix;
-		const code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+		let code = null;
+
+		try {
+			code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+		}
+		catch {
+			// Um total que não é um valor de verdade: cai na mensagem abaixo.
+		}
 
 		if (!code) {
 			return message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.');
@@ -1985,6 +2374,7 @@
 			el('p', {class: 'eyebrow'}, 'Pedido recebido'),
 			el('h2', null, `Pedido ${order.code}`),
 			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
+			Number.isFinite(order.expected) && Math.abs(order.total - order.expected) > 0.004 ? el('p', {class: 'cart-changed'}, `O total ficou em ${brl(order.total)}, e não em ${brl(order.expected)} como no carrinho: um preço mudou antes de o pedido fechar.`) : null,
 			el('p', null, `Pague com Pix até ${when(order.reservedUntil)}. Até lá, as cartas ficam reservadas para você.`),
 			pixBlock(order),
 			receiptBox(order),
@@ -2004,17 +2394,63 @@
 	// à venda com outro preço ou outras cópias (o Eric trocou uma cópia
 	// vendida) fica como está agora, e uma avulsa que passou a vir nele sai
 	// do carrinho.
+	//
+	// Junto do estado vêm o preço de agora e a reposição (revisão de
+	// engenharia de 2026-11-27, M1 e M2). O preço que o pedido cobra é o de
+	// quando ele fecha, e o carrinho guardava o de quando a carta entrou: o
+	// catálogo público (store_catalog, store_sealed) traz o de agora, sem
+	// mudar nada no banco. E uma cópia que outra pessoa levou não é o fim da
+	// carta: se há outra igual (mesma carta, idioma e acabamento; mesmo
+	// produto), ela é oferecida no lugar. Sem resposta do catálogo, o carrinho
+	// só perde isso.
+	const isSingle = (item) => item.kind !== 'kit' && item.kind !== 'sealed';
+
+	// Outra cópia igual à de uma linha que saiu de venda, ou null.
+	function findSwap(item, rows, products, taken) {
+		if (item.kind === 'sealed') {
+			const product = (products || []).find((one) => one.id === item.productId);
+			const unit = product && product.units.find((id) => !taken.has(id));
+
+			return unit ? sealedItem(product, unit) : null;
+		}
+
+		const same = (rows || [])
+			.filter((row) => isCardRow(row) && row.card_id === item.cardId && (row.language || '') === item.language && (row.finish ? finishName(row.finish) : null) === (item.finish || null) && !taken.has(row.id))
+			.sort((a, b) => Number(Boolean(a.in_kit)) - Number(Boolean(b.in_kit)) || Number(a.price_brl) - Number(b.price_brl));
+
+		return same[0] ? cartItem(same[0]) : null;
+	}
+
 	async function cartStatuses(cart) {
 		const ids = [...cartIds(cart)];
 		const hasKits = cart.some((item) => item.kind === 'kit');
-		const [raw, kits] = await Promise.all([rpc('listing_status', {ids}), hasKits ? readKits() : []]);
+		const [raw, kits, rows, products] = await Promise.all([
+			rpc('listing_status', {ids}),
+			hasKits ? readKits() : [],
+			cart.some(isSingle) ? readCatalog().catch(() => null) : null,
+			cart.some((item) => item.kind === 'sealed') ? readSealed().catch(() => null) : null,
+		]);
 		const states = raw || {};
 		const live = new Map(kits.map((kit) => [kit.id, kit]));
+		const liveRows = new Map((rows || []).map((row) => [row.id, row]));
+		const liveProducts = new Map((products || []).map((product) => [product.id, product]));
 		const out = {};
+		const prices = {};
 		let changed = false;
 		let next = cart.map((item) => {
 			if (item.kind !== 'kit') {
 				out[item.id] = states[item.id];
+
+				const row = isSingle(item) ? liveRows.get(item.id) : null;
+				const product = item.kind === 'sealed' && out[item.id] === 'available' ? liveProducts.get(item.productId) : null;
+				const price = row ? Number(row.price_brl) : product ? product.price : null;
+
+				if (price !== null && Number.isFinite(price) && price !== item.price) {
+					prices[item.id] = {from: item.price, to: price};
+					changed = true;
+
+					return {...item, price};
+				}
 
 				return item;
 			}
@@ -2027,6 +2463,10 @@
 				out[item.id] = 'available';
 
 				if (fresh.price !== item.price || fresh.ids.join() !== (item.ids || []).join()) {
+					if (fresh.price !== item.price) {
+						prices[item.id] = {from: item.price, to: fresh.price};
+					}
+
 					changed = true;
 
 					return fresh;
@@ -2049,32 +2489,91 @@
 			writeCart(next);
 		}
 
-		return out;
+		const taken = cartIds(next);
+		const offers = {};
+
+		for (const item of next) {
+			if (item.kind === 'kit' || out[item.id] === 'available') {
+				continue;
+			}
+
+			const swap = findSwap(item, rows, products, taken);
+
+			if (swap) {
+				offers[item.id] = swap;
+				taken.add(swap.id);
+			}
+		}
+
+		return {offers, prices, statuses: out};
+	}
+
+	// O texto de um erro do banco ao fechar o pedido. O place_order responde
+	// em inglês (supabase/store-bundles.sql, store-order-limits); o comprador
+	// lê português. Um texto que não está aqui aparece como veio.
+	const ORDER_ERRORS = {
+		'A card is in the order twice.': 'Há uma carta repetida no pedido. Tire a repetida do carrinho e feche de novo.',
+		'An order holds 1 to 20 cards.': 'Um pedido leva de 1 a 20 cartas.',
+		'An order holds up to 10 kits.': 'Um pedido leva até 10 kits.',
+		'The note holds up to 500 characters.': 'A observação leva até 500 caracteres.',
+		'The shop is holding too many unpaid orders right now. Try again later.': 'A loja está com muitos pedidos esperando pagamento agora. Tente de novo mais tarde.',
+		'This connection already has orders waiting for payment. Pay one of them first.': 'Esta conexão já tem pedidos esperando o Pix. Pague um deles antes de fazer outro.',
+		'This phone already has orders waiting for payment. Pay one of them first.': 'Este telefone já tem um pedido esperando o Pix. Pague esse pedido antes de fazer outro.',
+		'Type a name of up to 80 characters.': 'Escreva um nome de até 80 caracteres.',
+		'Type a phone number of up to 40 characters.': 'Escreva um WhatsApp ou telefone de até 40 caracteres.',
+	};
+
+	// O que o formulário mostra quando o pedido não fecha: o texto do banco em
+	// português, ou como veio; e, quando a resposta nem chegou, o aviso de que
+	// o pedido pode ter sido registrado (o banco guarda o pedido antes de
+	// responder, e o comprador não teria como saber).
+	function orderErrorText(err) {
+		if (err && err.network) {
+			return `Não foi possível confirmar o pedido porque a conexão caiu. Ele pode ter sido registrado: se as suas cartas aparecerem como reservadas por outra pessoa, escreva para ${EMAIL} com o seu nome.`;
+		}
+
+		const message = String((err && err.message) || '').trim();
+
+		return `O pedido não foi fechado. ${ORDER_ERRORS[message] || message || 'Tente de novo em instantes.'}`;
 	}
 
 	function order(root) {
 		let statuses = {};
+		let offers = {};
+		let priceNotes = {};
 		let busy = false;
 		let notice = '';
 		let timer = null;
 
 		const form = el('form', {class: 'order-form', novalidate: true});
-		const nameInput = el('input', {autocomplete: 'name', id: 'order-name', maxlength: 80, required: true, type: 'text'});
-		const phoneInput = el('input', {autocomplete: 'tel', id: 'order-phone', inputmode: 'tel', maxlength: 40, required: true, type: 'text'});
+		const nameInput = el('input', {'aria-describedby': 'order-error', autocomplete: 'name', id: 'order-name', maxlength: 80, required: true, type: 'text'});
+		const phoneInput = el('input', {'aria-describedby': 'order-error', autocomplete: 'tel', id: 'order-phone', inputmode: 'tel', maxlength: 40, required: true, type: 'text'});
 		const noteInput = el('textarea', {id: 'order-note', maxlength: 500, rows: 2});
-		const formError = el('p', {class: 'order-error', role: 'alert'});
+		const formError = el('p', {class: 'order-error', id: 'order-error', role: 'alert'});
 		const submit = el('button', {class: 'btn btn-gold', id: 'order-submit', type: 'submit'}, 'Fechar pedido');
 		const list = el('ul', {class: 'cart-list'});
 		const totalLine = el('p', {class: 'cart-total'});
 		const noticeLine = el('p', {'aria-live': 'polite', class: 'cart-notice'});
+		const clean = el('button', {class: 'btn btn-navy cart-clean', hidden: true, onclick: () => {
+			const off = new Set(readCart().filter((item) => statuses[item.id] === 'reserved' || statuses[item.id] === 'gone').map((item) => item.id));
+
+			writeCart(readCart().filter((item) => !off.has(item.id)));
+			draw();
+		}, type: 'button'}, 'Remover as indisponíveis');
+		const steps = el('ol', {class: 'order-steps'},
+			el('li', null, 'Feche o pedido.'),
+			el('li', null, 'Pague com Pix em até 48 horas.'),
+			el('li', null, 'Combine a entrega.')
+		);
 
 		form.append(
 			el('label', {for: 'order-name'}, 'Seu nome'), nameInput,
-			el('label', {for: 'order-phone'}, 'Telefone ou ramal'), phoneInput,
+			el('label', {for: 'order-phone'}, 'WhatsApp ou telefone'), phoneInput,
 			el('label', {for: 'order-note'}, 'Observação (opcional)'), noteInput,
 			el('p', {class: 'order-privacy'}, 'Seu nome e telefone só servem para o Eric combinar a entrega com você.'),
 			formError,
-			submit
+			submit,
+			el('p', {class: 'order-after'}, 'Na próxima tela aparece o Pix (QR Code e copia e cola).')
 		);
 		form.addEventListener('submit', (event) => {
 			event.preventDefault();
@@ -2083,10 +2582,43 @@
 
 		const OFFLINE = 'Não foi possível conferir as cartas agora. Tente de novo em instantes.';
 		const freeItems = () => readCart().filter((item) => statuses[item.id] === 'available');
+		const isOff = (item) => statuses[item.id] === 'reserved' || statuses[item.id] === 'gone';
 
 		function remove(id) {
 			writeCart(readCart().filter((item) => item.id !== id));
 			draw();
+		}
+
+		// Troca uma linha que saiu de venda pela cópia igual que o catálogo
+		// ainda tem.
+		function swap(old) {
+			const offer = offers[old.id];
+
+			if (!offer) {
+				return;
+			}
+
+			writeCart(readCart().map((item) => (item.id === old.id ? offer : item)));
+			delete offers[old.id];
+			delete statuses[old.id];
+			draw();
+			check();
+		}
+
+		function offerLine(item) {
+			const offer = offers[item.id];
+
+			if (!offer) {
+				return null;
+			}
+
+			const what = offer.kind === 'sealed' ? 'Outra unidade igual' : 'Outra cópia igual';
+			const detail = [offer.kind === 'sealed' ? null : offer.condition, brl(offer.price)].filter(Boolean).join(' · ');
+
+			return el('p', {class: 'cart-swap'},
+				`${what} está à venda: ${detail}. `,
+				el('button', {class: 'cart-swap-btn', onclick: () => swap(item), type: 'button'}, 'Trocar por ela')
+			);
 		}
 
 		// O último pedido, enquanto o prazo para pagar não acabou.
@@ -2112,16 +2644,19 @@
 
 			list.replaceChildren(...cart.map((item) => {
 				const status = statuses[item.id];
-				const off = status === 'reserved' || status === 'gone';
+				const off = isOff(item);
+				const note = priceNotes[item.id];
 
 				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
-					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
+					item.imagePath ? withFallback(el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)})) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
 					el('div', {class: 'cart-body'},
 						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
 						el('p', {class: 'cart-meta'}, item.kind === 'kit'
 							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
 							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), conditionPart(item.condition)], finishWords(item.finish, item.cardId, {normal: true}))),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
+						off ? offerLine(item) : null,
+						note && !off ? el('p', {class: 'cart-changed'}, `O preço mudou: era ${brl(note.from)}, agora é ${brl(note.to)}.`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
 					el('button', {'aria-label': `Remover ${item.name}`, class: 'cart-remove', onclick: () => remove(item.id), type: 'button'}, 'Remover')
@@ -2131,9 +2666,11 @@
 			const free = freeItems();
 			const total = free.reduce((sum, item) => sum + item.price, 0);
 			const checked = cart.every((item) => statuses[item.id]);
+			const offCount = cart.filter(isOff).length;
 
 			totalLine.textContent = free.length ? `Total: ${brl(total)} (${kitCards(cardCount(free))})` : '';
 			noticeLine.textContent = notice;
+			clean.hidden = !offCount;
 			submit.textContent = free.length ? `Fechar pedido com ${kitCards(cardCount(free))}` : 'Fechar pedido';
 			submit.disabled = busy || !checked || !free.length;
 
@@ -2147,39 +2684,58 @@
 						el('summary', null, `Pedido ${last.code} aguardando pagamento: ver o Pix`),
 						confirmation(last)
 					) : '',
-					el('h2', {class: 'cart-head'}, 'Seu carrinho'),
 					noticeLine,
 					list,
+					clean,
 					totalLine,
-					el('h3', {class: 'order-head'}, 'Fechar o pedido'),
+					el('h2', {class: 'order-head'}, 'Fechar o pedido'),
+					steps,
 					form
 				);
 			}
 		}
 
-		// Confere no Supabase quais cartas do carrinho ainda estão à venda.
+		// Confere no Supabase quais cartas do carrinho ainda estão à venda, e
+		// por quanto. Resolve {ok, changed}: changed são os preços que mudaram
+		// nesta conferência.
 		async function check() {
 			const cart = readCart();
 
 			if (!cart.length) {
 				draw();
 
-				return true;
+				return {changed: 0, ok: true};
 			}
 
-			try {
-				statuses = await cartStatuses(cart);
+			let changed = 0;
 
-				if (notice === OFFLINE) {
+			try {
+				const before = statuses;
+				const result = await cartStatuses(cart);
+
+				statuses = result.statuses;
+				offers = result.offers;
+				changed = Object.keys(result.prices).length;
+				Object.assign(priceNotes, result.prices);
+
+				const lost = cart.filter((item) => before[item.id] === 'available' && result.statuses[item.id] && result.statuses[item.id] !== 'available').length;
+
+				if (changed) {
+					notice = 'Alguns preços mudaram desde que você adicionou as cartas. Confira o total abaixo.';
+				}
+				else if (lost) {
+					notice = lost === 1 ? 'Uma carta ficou indisponível desde a última conferência.' : `${lost} cartas ficaram indisponíveis desde a última conferência.`;
+				}
+				else if (notice === OFFLINE) {
 					notice = '';
 				}
 
-				return true;
+				return {changed, ok: true};
 			}
 			catch {
 				notice = OFFLINE;
 
-				return false;
+				return {changed, ok: false};
 			}
 			finally {
 				draw();
@@ -2195,14 +2751,19 @@
 
 		async function close() {
 			formError.textContent = '';
+			nameInput.removeAttribute('aria-invalid');
+			phoneInput.removeAttribute('aria-invalid');
 			notice = '';
 
 			const name = nameInput.value.trim();
 			const phone = phoneInput.value.trim();
 
 			if (!name || !phone) {
-				formError.textContent = !name ? 'Escreva o seu nome.' : 'Escreva um telefone ou ramal para o Eric falar com você.';
-				(!name ? nameInput : phoneInput).focus();
+				const field = !name ? nameInput : phoneInput;
+
+				formError.textContent = !name ? 'Escreva o seu nome.' : 'Escreva um WhatsApp ou telefone para o Eric falar com você.';
+				field.setAttribute('aria-invalid', 'true');
+				field.focus();
 
 				return;
 			}
@@ -2213,13 +2774,24 @@
 			const fresh = await check();
 			const items = freeItems();
 
-			if (!fresh || !items.length) {
+			// Um preço mudou agora há pouco: o comprador vê o total novo antes
+			// de fechar, em vez de descobrir na tela do Pix.
+			if (fresh.ok && fresh.changed) {
+				busy = false;
+				notice = 'Os preços mudaram agora há pouco. Confira o total abaixo e feche o pedido de novo.';
+				draw();
+
+				return;
+			}
+
+			if (!fresh.ok || !items.length) {
 				busy = false;
 				draw();
 
 				return;
 			}
 
+			const expected = Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100;
 			let result;
 
 			try {
@@ -2233,7 +2805,7 @@
 			}
 			catch (err) {
 				busy = false;
-				formError.textContent = `O pedido não foi fechado. ${err.message || 'Tente de novo em instantes.'}`;
+				formError.textContent = orderErrorText(err);
 				draw();
 
 				return;
@@ -2248,7 +2820,7 @@
 			}
 
 			const ordered = new Set(items.map((item) => item.id));
-			const done = {code: result.code, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
+			const done = {code: result.code, expected, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
 
 			keepLastOrder(done);
 			rememberOrder(done.receiptToken);
@@ -2262,8 +2834,15 @@
 		draw();
 		check();
 		timer = setInterval(check, RECHECK_MS);
+		onCart(root, draw);
 		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState === 'visible' && readCart().length && root.contains(form)) {
+				check();
+			}
+		});
+		// O carrinho mudou em outra aba: confere de novo com o que ficou.
+		window.addEventListener('storage', (event) => {
+			if (event.key === CART_KEY && root.contains(form)) {
 				check();
 			}
 		});
@@ -2434,7 +3013,7 @@
 	function sealedShot(product, {link = true} = {}) {
 		const url = pictureUrl(product.photos[0]);
 		const inner = url
-			? el('img', {alt: product.name, class: 'card-pic sealed-pic', decoding: 'async', loading: 'lazy', src: url})
+			? withFallback(el('img', {alt: product.name, class: 'card-pic sealed-pic', decoding: 'async', loading: 'lazy', src: url}), product.name)
 			: el('span', {class: 'card-pic card-pic-none sealed-pic'}, product.name);
 
 		return link ? el('a', {'aria-hidden': 'true', class: 'shot card-shot sealed-shot', href: sealedHref(product), tabindex: '-1'}, inner) : el('div', {class: 'shot card-shot sealed-shot'}, inner);
@@ -2456,23 +3035,39 @@
 			const free = product.units.filter((unit) => !inCart.has(unit));
 			const there = product.units.length - free.length;
 
-			button.disabled = !free.length;
+			const capped = free.length > 0 && cartFull();
+
+			button.disabled = !free.length || capped;
 			button.classList.toggle('quick-in', there > 0);
-			button.setAttribute('aria-label', free.length ? `Adicionar ${product.name} ao carrinho` : `${product.name}: todos no carrinho`);
-			button.replaceChildren(icon(), there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar');
+			button.setAttribute('aria-label', capped ? `Um pedido leva até ${MAX_ORDER} itens` : free.length ? `Adicionar ${product.name} ao carrinho` : `${product.name}: todos no carrinho`);
+			button.replaceChildren(icon(), capped ? `Limite de ${MAX_ORDER}` : there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar');
 		}
 
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
 			const inCart = cartIds();
-			const unit = product.units.find((one) => !inCart.has(one));
+			const free = product.units.filter((one) => !inCart.has(one));
 
-			if (!unit || cardCount(readCart()) >= MAX_ORDER) {
+			if (!free.length || cartFull()) {
+				return;
+			}
+
+			button.disabled = true;
+
+			const live = new Set(await liveOnly(free));
+			const unit = free.find((one) => live.has(one));
+
+			if (!unit) {
+				draw();
+				toast('Esse produto acabou de ser reservado por outra pessoa.');
+				refreshNow();
+
 				return;
 			}
 
 			writeCart([...readCart(), sealedItem(product, unit)]);
 			draw();
 		});
+		onCart(button, draw);
 		draw();
 
 		return button;
@@ -2528,7 +3123,7 @@
 		root.replaceChildren(...(top.length
 			? [
 				el('section', {'aria-label': 'Em destaque', class: 'featured'}, el('h2', {class: 'featured-title'}, 'Em destaque'), grid(top)),
-				rest.length ? el('h2', {class: 'featured-title'}, 'Todos os selados') : '',
+				rest.length ? el('h2', {class: 'featured-title'}, 'Outros selados') : '',
 				rest.length ? grid(rest) : '',
 			]
 			: [grid(products)]));
@@ -2562,6 +3157,7 @@
 		}
 
 		document.title = `${product.name} | Selados | HOTARU`;
+		setCrumb(product.name);
 
 		const main = sealedShot(product, {link: false});
 		const thumbs = product.photos.length > 1
@@ -2580,7 +3176,8 @@
 			const inCart = cartIds();
 			const free = product.units.filter((unit) => !inCart.has(unit));
 			const qty = el('select', {'aria-label': 'Quantidade', class: 'buy-qty'}, free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
-			const add = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+			const capped = cartFull();
+			const add = el('button', {class: 'btn btn-gold buy-add', disabled: capped, onclick: async () => {
 				const n = Number(qty.value) || 1;
 				const cart = readCart();
 
@@ -2590,20 +3187,37 @@
 					return;
 				}
 
-				writeCart([...cart, ...free.slice(0, n).map((unit) => sealedItem(product, unit))]);
+				add.disabled = true;
+
+				const live = new Set(await liveOnly(free));
+				const take = free.filter((unit) => live.has(unit)).slice(0, n);
+
+				if (take.length < n) {
+					toast(take.length ? 'Algumas unidades acabaram de ser reservadas por outra pessoa.' : 'Esse produto acabou de ser reservado por outra pessoa.');
+					refreshNow();
+				}
+
+				if (!take.length) {
+					drawBuy();
+
+					return;
+				}
+
+				writeCart([...cart, ...take.map((unit) => sealedItem(product, unit))]);
 				drawBuy();
-				status.replaceChildren(n === 1 ? 'Adicionado ao carrinho. ' : `${n} adicionados ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
-			}, type: 'button'}, 'Adicionar ao carrinho');
+				status.replaceChildren(take.length === 1 ? 'Adicionado ao carrinho.' : `${take.length} adicionados ao carrinho.`, ...(free.length > take.length ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
+			}, type: 'button'}, capped ? `Limite de ${MAX_ORDER} itens` : 'Adicionar ao carrinho');
 
 			box.replaceChildren(el('div', {class: 'buy-line'},
-				el('p', {class: 'buy-label'}, el('strong', null, brl(product.price)), ` · ${available(product.units.length)}`),
+				el('p', {class: 'buy-label'}, available(product.units.length)),
 				free.length
 					? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, add)
-					: el('p', {class: 'buy-all-in'}, 'Todos estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho'))
+					: inCartLine(product.units.length === 1 ? 'Este produto está no seu carrinho.' : `Os ${product.units.length} produtos estão no seu carrinho.`)
 			), status);
 		}
 
 		drawBuy();
+		onCart(box, drawBuy);
 
 		const facts = [
 			['Tipo', product.category],
@@ -2617,10 +3231,10 @@
 				el('p', {class: 'eyebrow'}, ['Selado', languageName(product.language)].filter(Boolean).join(' · ')),
 				el('h1', null, product.name),
 				el('p', {class: 'card-price'}, brl(product.price)),
+				box,
 				el('dl', {class: 'card-facts'}, facts.map(([label, value]) => [el('dt', null, label), el('dd', null, value)])),
 				product.description ? el('div', {class: 'sealed-description'}, richText(product.description)) : null,
-				box,
-				el('p', {class: 'card-how'}, 'O carrinho não reserva o produto: ele fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva o produto: vale quem fechar o pedido primeiro. ', el('a', {href: 'pedido.html'}, 'Como funciona'), '.'),
 				el('a', {class: 'card-back', href: 'selados.html'}, '← Todos os selados')
 			)
 		));
@@ -2628,15 +3242,37 @@
 
 	const SEALED_VIEWS = {homesealed: sealedHome, sealed: sealedGrid, sealedone: sealedOne};
 
-	async function startSealed(roots) {
+	// O que cada leitura trouxe da última vez: uma releitura (a página volta
+	// a ficar à vista, ou vai-se pôr algo no carrinho) só redesenha quando o
+	// banco mudou, para a página não piscar nem perder a rolagem à toa.
+	const lastRead = {};
+
+	function sameAsBefore(key, data, first) {
+		const sig = JSON.stringify(data);
+		const same = !first && lastRead[key] === sig;
+
+		lastRead[key] = sig;
+
+		return same;
+	}
+
+	async function startSealed(roots, first = true) {
 		let products;
 
 		try {
 			const [rows, featured] = await Promise.all([readSealed(), readFeatured()]);
 
+			if (sameAsBefore('sealed', [rows, featured], first)) {
+				return;
+			}
+
 			products = featuredFirst(rows, featured);
 		}
 		catch {
+			if (!first) {
+				return;
+			}
+
 			for (const root of roots) {
 				if (root.dataset.catalog === 'homesealed') {
 					(root.closest('section') || root).hidden = true;
@@ -2727,7 +3363,7 @@
 			const url = pictureUrl(item.imagePath);
 
 			return url
-				? el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+				? withFallback(el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url}), item.name)
 				: el('span', {class: 'card-pic card-pic-none'}, item.name);
 		}));
 		const off = kitOff(kit);
@@ -2760,6 +3396,14 @@
 		return removed;
 	}
 
+	// O kit cabe no pedido, contando que as mesmas cartas avulsas saem dele.
+	function kitFits(kit) {
+		const ids = new Set(kit.items.map((item) => item.id));
+		const rest = readCart().filter((item) => item.id !== kit.id && !(item.kind !== 'kit' && ids.has(item.id)));
+
+		return cardCount(rest) + ids.size <= MAX_ORDER;
+	}
+
 	// Uma cópia do kit já está no carrinho em outro kit: este kit não entra.
 	const kitClash = (kit) => readCart().some((item) => item.kind === 'kit' && item.id !== kit.id && item.ids.some((id) => kit.items.some((one) => one.id === id)));
 
@@ -2775,14 +3419,28 @@
 
 		function draw() {
 			const there = readCart().some((item) => item.id === kit.id);
+			const capped = !there && !kitFits(kit);
 
-			button.disabled = there || kitClash(kit);
+			button.disabled = there || capped || kitClash(kit);
 			button.classList.toggle('quick-in', there);
-			button.setAttribute('aria-label', there ? `${kit.name}: no carrinho` : `Adicionar ${kit.name} ao carrinho`);
-			button.replaceChildren(...(status ? [] : [icon()]), there ? 'No carrinho' : (status ? 'Adicionar o kit ao carrinho' : 'Adicionar'));
+			button.setAttribute('aria-label', there ? `${kit.name}: no carrinho` : capped ? `Um pedido leva até ${MAX_ORDER} cartas` : `Adicionar ${kit.name} ao carrinho`);
+			button.replaceChildren(...(status ? [] : [icon()]), there ? 'No carrinho' : capped ? `Limite de ${MAX_ORDER}` : (status ? 'Adicionar o kit ao carrinho' : 'Adicionar'));
 		}
 
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
+			button.disabled = true;
+
+			// O kit só entra com todas as cartas ainda à venda.
+			const live = new Set(await liveOnly(kit.items.map((item) => item.id)));
+
+			if (kit.items.some((item) => !live.has(item.id))) {
+				draw();
+				toast('Uma carta do kit acabou de ser reservada por outra pessoa.');
+				refreshNow();
+
+				return;
+			}
+
 			const removed = addKit(kit);
 
 			if (removed === null) {
@@ -2794,9 +3452,10 @@
 			draw();
 
 			if (status) {
-				status.replaceChildren(removed ? `Kit adicionado. ${removed === 1 ? 'A carta avulsa igual saiu' : `As ${removed} cartas avulsas iguais saíram`} do carrinho, porque já vêm no kit. ` : 'Kit adicionado ao carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+				status.replaceChildren(removed ? `Kit adicionado. ${removed === 1 ? 'A carta avulsa igual saiu' : `As ${removed} cartas avulsas iguais saíram`} do carrinho, porque já vêm no kit. ` : 'Kit adicionado ao carrinho. ', el('a', {class: 'btn btn-navy', href: 'pedido.html'}, 'Ir para o carrinho'));
 			}
 		});
+		onCart(button, draw);
 		draw();
 
 		return button;
@@ -2807,7 +3466,7 @@
 	function kitPrice(kit) {
 		return el('div', {class: 'price kit-price'},
 			el('strong', null, brl(kit.price)),
-			kit.sum > kit.price ? el('s', {'aria-label': `separadas, ${brl(kit.sum)}`}, brl(kit.sum)) : null);
+			kit.sum > kit.price ? el('s', null, el('span', {class: 'sr'}, 'separadas, '), brl(kit.sum)) : null);
 	}
 
 	function kitTile(kit) {
@@ -2819,7 +3478,7 @@
 				el('p', {class: 'card-set'}, kit.items.map((item) => item.name).join(' · ')),
 				kitPrice(kit),
 				el('div', {class: 'card-foot'},
-					el('p', {class: 'card-count'}, 'Leve junto e pague menos'),
+					el('p', {class: 'card-count'}, kit.sum > kit.price ? `Economize ${brl(Math.round((kit.sum - kit.price) * 100) / 100)}` : 'Cartas vendidas juntas'),
 					kitAdd(kit)
 				)
 			)
@@ -2878,10 +3537,11 @@
 		}
 
 		document.title = `${kit.name} | Kits | HOTARU`;
+		setCrumb(kit.name);
 
 		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
 		const cards = el('ul', {class: 'kit-cards'}, kit.items.map((item) => el('li', {class: 'kit-card'},
-			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
+			item.imagePath ? withFallback(el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)})) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
 			el('div', null,
 				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
 				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), conditionPart(item.condition)], finishWords(item.finish, item.cardId))),
@@ -2894,10 +3554,10 @@
 				el('h1', null, kit.name),
 				kitPrice(kit),
 				el('p', {class: 'kit-saving'}, kit.sum > kit.price ? `Separadas, as cartas custam ${brl(kit.sum)}: no kit, você economiza ${brl(Math.round((kit.sum - kit.price) * 100) / 100)}.` : `Separadas, as cartas custam ${brl(kit.sum)}.`),
+				el('div', {class: 'buy-box'}, el('div', {class: 'buy-line'}, el('div', {class: 'buy-actions'}, kitAdd(kit, status))), status),
 				kit.description ? el('div', {class: 'sealed-description'}, richText(kit.description)) : null,
 				cards,
-				el('div', {class: 'buy-box'}, el('div', {class: 'buy-line'}, el('div', {class: 'buy-actions'}, kitAdd(kit, status))), status),
-				el('p', {class: 'card-how'}, 'O carrinho não reserva o kit, e cada carta dele também está à venda sozinha: fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva o kit, e cada carta dele também está à venda sozinha: vale quem fechar o pedido primeiro. ', el('a', {href: 'pedido.html'}, 'Como funciona'), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
 		));
@@ -2905,13 +3565,21 @@
 
 	const KIT_VIEWS = {homekits: kitsHome, kit: kitOne, kits: kitsAll};
 
-	async function startKits(roots) {
+	async function startKits(roots, first = true) {
 		let kits;
 
 		try {
 			kits = await readKits();
+
+			if (sameAsBefore('kits', kits, first)) {
+				return;
+			}
 		}
 		catch {
+			if (!first) {
+				return;
+			}
+
 			for (const root of roots) {
 				if (root.dataset.catalog === 'kit') {
 					root.replaceChildren(message('Não foi possível carregar o kit agora. Tente de novo em instantes.'));
@@ -2931,9 +3599,51 @@
 
 	const VIEWS = {all, card: one, home};
 
+	// O quadro do YouTube da home e da Sobre é uma fachada (miniatura e botão
+	// de tocar, feitos pelo script de build.py): o player só entra no clique,
+	// do youtube-nocookie, e já toca.
+	function watchVideos() {
+		document.addEventListener('click', (event) => {
+			const button = event.target instanceof Element ? event.target.closest('.yt-play') : null;
+
+			if (!button || !/^[A-Za-z0-9_-]{11}$/.test(button.dataset.id || '')) {
+				return;
+			}
+
+			const frame = el('iframe', {
+				allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture',
+				allowfullscreen: true,
+				referrerpolicy: 'strict-origin-when-cross-origin',
+				src: `https://www.youtube-nocookie.com/embed/${button.dataset.id}?autoplay=1&rel=0`,
+				title: 'Vídeo sobre coleções de cartas do canal Ericthm no YouTube',
+			});
+
+			button.replaceWith(frame);
+			frame.focus();
+		});
+	}
+
+	// A faixa de navegação rola quando não cabe (um celular estreito): um
+	// esmaecer na ponta avisa que há mais links, e some quando ela chega ao
+	// fim.
+	function watchNav() {
+		for (const nav of document.querySelectorAll('.nav')) {
+			const update = () => {
+				nav.classList.toggle('is-scrollable', nav.scrollWidth > nav.clientWidth + 1);
+				nav.classList.toggle('at-end', nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 2);
+			};
+
+			nav.addEventListener('scroll', update, {passive: true});
+			window.addEventListener('resize', update, {passive: true});
+			update();
+		}
+	}
+
 	async function start() {
 		drawCartCount();
 		watchFinishTags();
+		watchNav();
+		watchVideos();
 
 		const mineRoot = document.querySelector('[data-catalog="mine"]');
 
@@ -2961,39 +3671,94 @@
 
 		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot && !SEALED_VIEWS[root.dataset.catalog] && !KIT_VIEWS[root.dataset.catalog]);
 
+		async function loadCatalog(first) {
+			let groups;
+			let featured;
+
+			try {
+				const [rows, picks] = await Promise.all([readCatalog(), readFeatured()]);
+
+				if (sameAsBefore('catalog', [rows, picks], first)) {
+					return;
+				}
+
+				groups = groupCards(rows);
+				featured = picks;
+			}
+			catch {
+				if (!first) {
+					return;
+				}
+
+				for (const root of roots) {
+					if (root.dataset.catalog === 'home') {
+						(root.closest('section') || root).hidden = true;
+					}
+					else {
+						root.replaceChildren(message('Não foi possível carregar as cartas agora. Tente de novo em instantes.'));
+					}
+				}
+
+				return;
+			}
+
+			for (const root of roots) {
+				const view = VIEWS[root.dataset.catalog];
+
+				if (view) {
+					view(root, groups, featured);
+				}
+			}
+		}
+
+		// Uma página aberta há tempo mostra o que havia quando abriu: ao voltar
+		// à aba, ao voltar de outra página (o navegador guarda a página inteira)
+		// e antes de pôr algo no carrinho, o catálogo é lido de novo, e a página
+		// só muda se o banco mudou (revisão de engenharia, M7).
+		let refreshing = null;
+
+		refreshNow = () => {
+			if (!refreshing) {
+				featuredRead = null;
+				refreshing = Promise.all([
+					roots.length ? loadCatalog(false) : null,
+					sealedRoots.length ? startSealed(sealedRoots, false) : null,
+					kitRoots.length ? startKits(kitRoots, false) : null,
+				]).finally(() => {
+					refreshing = null;
+				});
+			}
+
+			return refreshing;
+		};
+
+		if (roots.length || sealedRoots.length || kitRoots.length) {
+			document.addEventListener('visibilitychange', () => {
+				if (document.visibilityState === 'visible') {
+					refreshNow();
+				}
+			});
+			window.addEventListener('pageshow', (event) => {
+				if (event.persisted) {
+					refreshNow();
+				}
+			});
+		}
+
+		// O carrinho mudou em outra aba: os botões e os contadores desta
+		// acompanham.
+		window.addEventListener('storage', (event) => {
+			if (event.key === CART_KEY || event.key === null) {
+				drawCartCount();
+				document.dispatchEvent(new Event(CART_EVENT));
+			}
+		});
+
 		if (!roots.length) {
 			return;
 		}
 
-		let groups;
-		let featured;
-
-		try {
-			const [rows, picks] = await Promise.all([readCatalog(), readFeatured()]);
-
-			groups = groupCards(rows);
-			featured = picks;
-		}
-		catch {
-			for (const root of roots) {
-				if (root.dataset.catalog === 'home') {
-					(root.closest('section') || root).hidden = true;
-				}
-				else {
-					root.replaceChildren(message('Não foi possível carregar as cartas agora. Tente de novo em instantes.'));
-				}
-			}
-
-			return;
-		}
-
-		for (const root of roots) {
-			const view = VIEWS[root.dataset.catalog];
-
-			if (view) {
-				view(root, groups, featured);
-			}
-		}
+		await loadCatalog(true);
 	}
 
 	if (document.readyState === 'loading') {

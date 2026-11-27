@@ -107,6 +107,7 @@ function list(root, posts) {
 	const shown = current ? posts.filter((post) => post.category === current) : posts;
 
 	root.replaceChildren(
+		wanted && !current ? el('p', {class: 'card-note', role: 'status'}, `Não há posts na categoria "${wanted}". A lista mostra todos os posts.`) : '',
 		categories.length > 1 || current
 			? el('nav', {'aria-label': 'Categorias do blog', class: 'chips post-chips'},
 				el('a', {'aria-current': current ? null : 'page', class: 'chip', href: 'blog.html'}, 'Todos'),
@@ -114,6 +115,26 @@ function list(root, posts) {
 			: '',
 		grid(shown)
 	);
+}
+
+// O corpo do post. Quando ele abre com um título que repete o do post (como
+// "Os Mandamentos do Colecionador (Parte 1)" sob "Os Mandamentos do
+// Colecionador"), o título da página passa a ser esse e o título repetido sai
+// do corpo.
+function postBody(post, heading) {
+	const body = el('div', {class: 'post-body'}, renderPost(post.body, {title: post.title}));
+	const first = body.firstElementChild;
+	const same = (text) => text.trim().toLowerCase();
+
+	if (first && /^H[1-3]$/.test(first.tagName) && same(first.textContent).startsWith(same(post.title))) {
+		if (first.textContent.trim().length > post.title.trim().length) {
+			heading.textContent = first.textContent.trim();
+		}
+
+		first.remove();
+	}
+
+	return body;
 }
 
 async function one(root) {
@@ -134,7 +155,7 @@ async function one(root) {
 			message('Este post não existe ou não está mais publicado.'),
 			el('a', {class: 'btn btn-navy', href: 'blog.html'}, 'Ver os posts do blog')
 		);
-		document.title = 'Post não encontrado — HOTARU';
+		document.title = 'Post não encontrado | HOTARU';
 
 		return;
 	}
@@ -146,7 +167,7 @@ async function one(root) {
 		crumbs.textContent = post.title;
 	}
 
-	document.title = `${post.title} — Blog HOTARU`;
+	document.title = `${post.title} | Blog HOTARU`;
 
 	const description = document.querySelector('meta[name="description"]');
 
@@ -154,14 +175,16 @@ async function one(root) {
 		description.setAttribute('content', post.excerpt);
 	}
 
+	const heading = el('h1', null, post.title);
+
 	root.replaceChildren(el('article', {class: 'post'},
 		el('header', {class: 'post-head'},
 			post.category ? el('a', {class: 'eyebrow post-category', href: categoryHref(post.category)}, post.category) : '',
-			el('h1', null, post.title),
+			heading,
 			el('p', {class: 'post-date'}, el('time', {datetime: post.published_at}, postDate(post.published_at)))
 		),
 		cover ? el('img', {alt: '', class: 'post-cover', decoding: 'async', src: cover}) : '',
-		el('div', {class: 'post-body'}, renderPost(post.body, {title: post.title})),
+		postBody(post, heading),
 		el('p', {class: 'post-back'}, el('a', {class: 'btn btn-navy', href: 'blog.html'}, 'Mais posts do blog'))
 	));
 }
