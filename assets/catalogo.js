@@ -458,7 +458,9 @@
 		el('figcaption', null, HELP[kind].title)
 	);
 
-	// O conteúdo do balão de uma etiqueta.
+	// O conteúdo do balão de uma etiqueta. Sai sem os null: o balão de um
+	// estado ou de uma raridade não tem figura nem miniaturas, e o
+	// replaceChildren do DOM, ao contrário do el, escreveria "null".
 	function helpContent(button) {
 		const kind = button.dataset.finishKind;
 		const help = HELP[kind];
@@ -471,7 +473,7 @@
 				? el('img', {alt: help.picture.alt, class: 'finish-pop-stamp', height: String(help.picture.height), src: help.picture.src, width: String(help.picture.width)})
 				: help.minis ? el('div', {class: 'finish-pop-cards'}, pairs[help.minis].map((one) => miniCard(one, one === kind))) : null,
 			el('p', {class: 'finish-pop-text'}, pattern ? `${patternText(pattern)} ${help.text}` : help.text),
-		];
+		].filter(Boolean);
 	}
 
 	// O balão é um só na página, preso ao body, para não ser cortado pela
