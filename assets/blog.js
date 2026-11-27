@@ -134,7 +134,7 @@ async function one(root) {
 			message('Este post não existe ou não está mais publicado.'),
 			el('a', {class: 'btn btn-navy', href: 'blog.html'}, 'Ver os posts do blog')
 		);
-		document.title = 'Post não encontrado — HOTARU';
+		document.title = 'Post não encontrado | HOTARU';
 
 		return;
 	}
@@ -146,7 +146,7 @@ async function one(root) {
 		crumbs.textContent = post.title;
 	}
 
-	document.title = `${post.title} — Blog HOTARU`;
+	document.title = `${post.title} | Blog HOTARU`;
 
 	const description = document.querySelector('meta[name="description"]');
 

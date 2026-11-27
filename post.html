@@ -3,22 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Blog — HOTARU</title>
-<meta name="description" content="HOTARU — loja virtual de cartas colecionáveis: cartas avulsas e selados.">
+<title>Blog | HOTARU</title>
+<meta name="description" content="Um texto do blog da HOTARU, sobre Pokémon TCG e coleção.">
 <meta name="theme-color" content="#0e1f47">
 <link rel="icon" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<meta property="og:title" content="HOTARU — Brilhe em novos universos">
-<meta property="og:description" content="Loja virtual de cartas colecionáveis: cartas avulsas e selados.">
-<meta property="og:image" content="assets/og-image.jpg">
+<meta property="og:title" content="Blog | HOTARU">
+<meta property="og:description" content="Um texto do blog da HOTARU, sobre Pokémon TCG e coleção.">
+<meta property="og:image" content="https://lojahotaru.com.br/assets/og-image.jpg">
+<meta property="og:url" content="https://lojahotaru.com.br/post.html">
+<meta property="og:site_name" content="HOTARU">
+<meta property="og:locale" content="pt_BR">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="assets/style.css?v=bb8ac85cbc">
+<link rel="stylesheet" href="assets/style.css?v=9662d866a1">
 </head>
 <body>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
     <linearGradient id="g-foil" x1="0" y1="0" x2="1" y2="1">
@@ -177,14 +181,12 @@
 </svg>
 <header class="masthead">
   <div class="wrap">
-    <nav class="nav">
+    <nav class="nav" aria-label="Principal">
       <a href="index.html">Início</a>
       <a href="avulsas.html">Cartas</a>
       <a href="selados.html">Selados</a>
       <a href="blog.html" aria-current="page">Blog</a>
       <a href="sobre.html">Sobre nós</a>
-      <a href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">YouTube</a>
-      <a href="#contato">Contato</a>
     </nav>
 
     <a class="brand" href="index.html">
@@ -202,7 +204,7 @@
     </div>
   </div>
 </header>
-
+<main id="conteudo" tabindex="-1">
 <div class="pagehead post-pagehead">
   <div class="wrap">
     <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="blog.html">Blog</a> &nbsp;/&nbsp; <span data-blog-crumb>Post</span></p>
@@ -210,10 +212,11 @@
 </div>
 
 <section class="wrap cartas">
-  <div data-blog="post"><p class="card-note" role="status">Carregando o post…</p></div>
+  <div data-blog="post"><p class="card-note card-loading" role="status">Carregando o post…</p></div>
 </section>
-<script type="module" src="assets/blog.js?v=9757fb3204"></script>
-<script src="assets/catalogo.js?v=607ee55784" defer></script><footer class="foot" id="contato">
+<script type="module" src="assets/blog.js?v=699b019050"></script>
+</main>
+<script src="assets/catalogo.js?v=19e0f5d73e" defer></script><footer class="foot" id="contato">
   <div class="wrap">
     <div class="foot-top">
       <div class="about">
@@ -235,7 +238,7 @@
     </div>
 
     <div class="foot-bot">
-      <span>© 2026 HOTARU — Recife/PE.</span>
+      <span>© 2026 HOTARU · Recife/PE</span>
     </div>
   </div>
 </footer>

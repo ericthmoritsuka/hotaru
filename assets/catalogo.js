@@ -2931,9 +2931,26 @@
 
 	const VIEWS = {all, card: one, home};
 
+	// A faixa de navegação rola quando não cabe (um celular estreito): um
+	// esmaecer na ponta avisa que há mais links, e some quando ela chega ao
+	// fim.
+	function watchNav() {
+		for (const nav of document.querySelectorAll('.nav')) {
+			const update = () => {
+				nav.classList.toggle('is-scrollable', nav.scrollWidth > nav.clientWidth + 1);
+				nav.classList.toggle('at-end', nav.scrollLeft + nav.clientWidth >= nav.scrollWidth - 2);
+			};
+
+			nav.addEventListener('scroll', update, {passive: true});
+			window.addEventListener('resize', update, {passive: true});
+			update();
+		}
+	}
+
 	async function start() {
 		drawCartCount();
 		watchFinishTags();
+		watchNav();
 
 		const mineRoot = document.querySelector('[data-catalog="mine"]');
 
