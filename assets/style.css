@@ -1350,8 +1350,10 @@ section { padding: 76px 0; }
 }
 
 /* Selados: a grade, a página do produto e a galeria. */
-.sealed-shot .sealed-pic { width: 82%; aspect-ratio: 1 / 1; object-fit: cover; border-radius: 10px; }
-.sealed-detail .sealed-shot .sealed-pic { width: 86%; }
+/* A foto do produto inteira, sem cortar a caixa: contain, sobre um painel
+   marfim que faz as fotos de fundo branco parecerem parte da moldura. */
+.sealed-shot .sealed-pic { width: 82%; aspect-ratio: 1 / 1; object-fit: contain; background: var(--ivory); border-radius: 10px; }
+.sealed-detail .sealed-shot .sealed-pic { width: auto; height: 90%; max-width: 92%; }
 .sealed-gallery { display: grid; gap: 12px; }
 .sealed-thumbs { display: flex; flex-wrap: wrap; gap: 8px; }
 .sealed-thumb { padding: 0; border: 1px solid rgba(14, 31, 71, 0.18); border-radius: 8px; background: #fff; cursor: pointer; width: 64px; height: 64px; overflow: hidden; }
@@ -1706,4 +1708,30 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 @media (max-width: 480px) {
   .card-filters input, .card-filters select { padding: 12px 10px; font-size: 0.85rem; }
   .card-filters .card-set-select, .card-filters > :last-child { grid-column: 1 / -1; }
+}
+
+/* Páginas de produto: a faixa do caminho só leva o caminho. */
+.pagehead.compact { padding: 14px 0; }
+.pagehead.compact .crumbs { margin: 0; }
+.crumbs [data-crumb] { color: var(--ink); }
+
+/* Tudo da linha de compra já no carrinho: o aviso e o botão para seguir. */
+.buy-all-in { margin: 8px 0 0; display: flex; gap: 10px 16px; align-items: center; flex-wrap: wrap; }
+.buy-all-in p { margin: 0; font-size: 0.9rem; color: var(--ink-soft); }
+.buy-all-in a.btn, .buy-status a.btn { color: var(--ivory); font-weight: 600; }
+.buy-status a.btn { display: inline-flex; margin-left: 8px; }
+
+/* No celular, a foto da página de produto é mais baixa, para o botão de
+   comprar ficar na primeira tela. */
+@media (max-width: 720px) {
+  .card-detail .card-shot { aspect-ratio: 1 / 0.92; }
+  .card-detail .card-pic { width: 56%; }
+  .card-info h1 { margin: 6px 0 8px; }
+  .card-price { margin-bottom: 14px; }
+  /* As miniaturas de um selado ficam sobre a foto, em vez de uma fila que
+     empurra o botão para baixo. */
+  .sealed-detail .card-shot { aspect-ratio: 1 / 0.82; }
+  .sealed-gallery { position: relative; }
+  .sealed-thumbs { position: absolute; left: 10px; bottom: 10px; z-index: 3; }
+  .sealed-thumb { width: 44px; height: 44px; box-shadow: 0 2px 8px rgba(8, 20, 40, 0.35); }
 }

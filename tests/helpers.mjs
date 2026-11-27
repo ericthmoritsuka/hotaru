@@ -6,6 +6,7 @@
 // Run a check with: python3 build.py && PLAYWRIGHT=/path/to/node_modules/playwright node tests/<name>-check.mjs
 
 import {spawn} from 'node:child_process';
+import net from 'node:net';
 import {createRequire} from 'node:module';
 import {dirname, join} from 'node:path';
 import {fileURLToPath} from 'node:url';
@@ -17,7 +18,18 @@ export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 export const SUPABASE = 'https://ehdkbxrjxsypegbtrxbw.supabase.co';
 export const GRAPHQL = 'https://api.tcgdex.net/v2/graphql';
 
-export const PORT = 8000 + Math.floor(Math.random() * 900);
+// A port nobody else is listening on (another session may be serving a folder).
+const freePort = () => new Promise((resolve) => {
+	const probe = net.createServer();
+
+	probe.listen(0, '127.0.0.1', () => {
+		const {port} = probe.address();
+
+		probe.close(() => resolve(port));
+	});
+});
+
+export const PORT = await freePort();
 export const ORIGIN = `http://127.0.0.1:${PORT}`;
 
 export function startServer() {

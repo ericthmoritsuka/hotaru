@@ -1238,6 +1238,17 @@
 
 	const message = (text, cls = 'card-note') => el('p', {class: cls, role: 'status'}, text);
 
+	// O último passo do caminho de uma página de produto é o nome dele
+	// (revisão de QA, QA-28); até a página carregar, fica "Carta", "Kit" ou
+	// "Selado".
+	function setCrumb(text) {
+		const node = document.querySelector('[data-crumb]');
+
+		if (node) {
+			node.textContent = text;
+		}
+	}
+
 	// -------------------------------------------------------- featured
 
 	// Uma carta em destaque é um anúncio: a carta num idioma e num
@@ -1752,7 +1763,7 @@
 		// acabamentos separados) abre o Normal simples, ou o primeiro.
 		const wanted = params.get('a');
 		const group = wanted !== null
-			? same.find((one) => (one.finish || '') === wanted)
+			? same.find((one) => (one.finish || '').toLowerCase() === wanted.toLowerCase())
 			: same.find((one) => plainFinish(one.finish)) || same[0];
 
 		if (!group) {
@@ -1766,6 +1777,7 @@
 		}
 
 		document.title = `${fullName(group)} | Cartas | HOTARU`;
+		setCrumb(group.name);
 
 		// A ficha separa as etiquetas: o brilho no Acabamento, e as marcas
 		// em linhas próprias, cada uma com o seu "?".
@@ -1794,10 +1806,10 @@
 				el('p', {class: 'eyebrow'}, ['Carta avulsa', languageName(group.language)].filter(Boolean).join(' · ')),
 				el('h1', null, group.name),
 				el('p', {class: 'card-price'}, brl(group.price)),
-				factList,
 				buyBox(group),
 				otherFinishes(group, same),
-				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: ela fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				factList,
+				el('p', {class: 'card-how'}, 'O carrinho não reserva a carta: vale quem fechar o pedido primeiro. ', el('a', {href: 'pedido.html'}, 'Como funciona'), '.'),
 				el('p', {class: 'card-how'}, 'Dúvidas? ', el('a', {href: mailto(group)}, `Escreva para ${EMAIL}`), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
@@ -1825,10 +1837,16 @@
 		);
 	}
 
+	// O que a linha de compra diz quando tudo dela já está no carrinho, com o
+	// botão para seguir.
+	const inCartLine = (text) => el('div', {class: 'buy-all-in'}, el('p', null, text), el('a', {class: 'btn btn-navy', href: 'pedido.html'}, 'Ir para o carrinho'));
+
 	// Adicionar ao carrinho: uma linha por estado, acabamento e preço, com
 	// quantas cópias ainda não estão no carrinho.
 	function buyBox(group) {
 		const box = el('div', {class: 'buy-box'});
+		// Um só aviso para a caixa, que sobrevive a cada redesenho das linhas.
+		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
 
 		function draw() {
 			const inCart = cartIds();
@@ -1850,6 +1868,7 @@
 				}
 			}
 
+			const single = variants.size === 1;
 			const lines = [...variants.values()].map(({free, row, total}) => {
 				// O brilho e a edição da cópia; o stamp é da coleção, e fica na
 				// ficha.
@@ -1870,7 +1889,9 @@
 
 					writeCart([...cart, ...free.slice(0, n).map(cartItem)]);
 					draw();
-					status.replaceChildren(n === 1 ? 'Adicionada ao carrinho. ' : `${n} adicionadas ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+					// Quando não sobra cópia, o "Ir para o carrinho" da própria
+					// linha já leva adiante.
+					status.replaceChildren(n === 1 ? 'Adicionada ao carrinho.' : `${n} adicionadas ao carrinho.`, ...(free.length > n ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
 				}, type: 'button'}, 'Adicionar ao carrinho');
 				const inside = total - free.length;
 
@@ -1879,15 +1900,13 @@
 						typeof state === 'object' && state
 							? [el('strong', null, state.label), badgeHelp(state), words.length ? [' · ', el('strong', null, words.map((badge) => badge.label).join(' · '))] : null]
 							: el('strong', null, label),
-						words.map(badgeHelp), ` · ${brl(row.price_brl)} · ${available(total)}`),
+						words.map(badgeHelp), single ? ` · ${available(total)}` : ` · ${brl(row.price_brl)} · ${available(total)}`),
 					free.length
 						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
-						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
+						: inCartLine(total === 1 ? 'Esta carta está no seu carrinho.' : `As ${total} cópias estão no seu carrinho.`),
 					inside && free.length ? el('p', {class: 'buy-in'}, inside === 1 ? '1 já está no seu carrinho.' : `${inside} já estão no seu carrinho.`) : null
 				);
 			});
-			const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
-
 			box.replaceChildren(...lines, status);
 		}
 
@@ -2721,7 +2740,7 @@
 		root.replaceChildren(...(top.length
 			? [
 				el('section', {'aria-label': 'Em destaque', class: 'featured'}, el('h2', {class: 'featured-title'}, 'Em destaque'), grid(top)),
-				rest.length ? el('h2', {class: 'featured-title'}, 'Todos os selados') : '',
+				rest.length ? el('h2', {class: 'featured-title'}, 'Outros selados') : '',
 				rest.length ? grid(rest) : '',
 			]
 			: [grid(products)]));
@@ -2755,6 +2774,7 @@
 		}
 
 		document.title = `${product.name} | Selados | HOTARU`;
+		setCrumb(product.name);
 
 		const main = sealedShot(product, {link: false});
 		const thumbs = product.photos.length > 1
@@ -2785,14 +2805,14 @@
 
 				writeCart([...cart, ...free.slice(0, n).map((unit) => sealedItem(product, unit))]);
 				drawBuy();
-				status.replaceChildren(n === 1 ? 'Adicionado ao carrinho. ' : `${n} adicionados ao carrinho. `, el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+				status.replaceChildren(n === 1 ? 'Adicionado ao carrinho.' : `${n} adicionados ao carrinho.`, ...(free.length > n ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
 			}, type: 'button'}, 'Adicionar ao carrinho');
 
 			box.replaceChildren(el('div', {class: 'buy-line'},
-				el('p', {class: 'buy-label'}, el('strong', null, brl(product.price)), ` · ${available(product.units.length)}`),
+				el('p', {class: 'buy-label'}, available(product.units.length)),
 				free.length
 					? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, add)
-					: el('p', {class: 'buy-all-in'}, 'Todos estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho'))
+					: inCartLine(product.units.length === 1 ? 'Este produto está no seu carrinho.' : `Os ${product.units.length} produtos estão no seu carrinho.`)
 			), status);
 		}
 
@@ -2810,10 +2830,10 @@
 				el('p', {class: 'eyebrow'}, ['Selado', languageName(product.language)].filter(Boolean).join(' · ')),
 				el('h1', null, product.name),
 				el('p', {class: 'card-price'}, brl(product.price)),
+				box,
 				el('dl', {class: 'card-facts'}, facts.map(([label, value]) => [el('dt', null, label), el('dd', null, value)])),
 				product.description ? el('div', {class: 'sealed-description'}, richText(product.description)) : null,
-				box,
-				el('p', {class: 'card-how'}, 'O carrinho não reserva o produto: ele fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva o produto: vale quem fechar o pedido primeiro. ', el('a', {href: 'pedido.html'}, 'Como funciona'), '.'),
 				el('a', {class: 'card-back', href: 'selados.html'}, '← Todos os selados')
 			)
 		));
@@ -2987,7 +3007,7 @@
 			draw();
 
 			if (status) {
-				status.replaceChildren(removed ? `Kit adicionado. ${removed === 1 ? 'A carta avulsa igual saiu' : `As ${removed} cartas avulsas iguais saíram`} do carrinho, porque já vêm no kit. ` : 'Kit adicionado ao carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho'));
+				status.replaceChildren(removed ? `Kit adicionado. ${removed === 1 ? 'A carta avulsa igual saiu' : `As ${removed} cartas avulsas iguais saíram`} do carrinho, porque já vêm no kit. ` : 'Kit adicionado ao carrinho. ', el('a', {class: 'btn btn-navy', href: 'pedido.html'}, 'Ir para o carrinho'));
 			}
 		});
 		draw();
@@ -3071,6 +3091,7 @@
 		}
 
 		document.title = `${kit.name} | Kits | HOTARU`;
+		setCrumb(kit.name);
 
 		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
 		const cards = el('ul', {class: 'kit-cards'}, kit.items.map((item) => el('li', {class: 'kit-card'},
@@ -3087,10 +3108,10 @@
 				el('h1', null, kit.name),
 				kitPrice(kit),
 				el('p', {class: 'kit-saving'}, kit.sum > kit.price ? `Separadas, as cartas custam ${brl(kit.sum)}: no kit, você economiza ${brl(Math.round((kit.sum - kit.price) * 100) / 100)}.` : `Separadas, as cartas custam ${brl(kit.sum)}.`),
+				el('div', {class: 'buy-box'}, el('div', {class: 'buy-line'}, el('div', {class: 'buy-actions'}, kitAdd(kit, status))), status),
 				kit.description ? el('div', {class: 'sealed-description'}, richText(kit.description)) : null,
 				cards,
-				el('div', {class: 'buy-box'}, el('div', {class: 'buy-line'}, el('div', {class: 'buy-actions'}, kitAdd(kit, status))), status),
-				el('p', {class: 'card-how'}, 'O carrinho não reserva o kit, e cada carta dele também está à venda sozinha: fica com quem fechar o pedido primeiro. Depois, é só pagar com Pix em até 48 horas, e a entrega é combinada com você.'),
+				el('p', {class: 'card-how'}, 'O carrinho não reserva o kit, e cada carta dele também está à venda sozinha: vale quem fechar o pedido primeiro. ', el('a', {href: 'pedido.html'}, 'Como funciona'), '.'),
 				el('a', {class: 'card-back', href: 'avulsas.html'}, '← Todas as cartas')
 			)
 		));

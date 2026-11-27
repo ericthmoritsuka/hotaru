@@ -266,9 +266,9 @@ page("avulsas", "Cartas avulsas | HOTARU", avulsas, "avulsas.html",
 print("avulsas.html")
 
 carta = f'''
-<div class="pagehead">
+<div class="pagehead compact">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a></p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; <span data-crumb>Carta</span></p>
   </div>
 </div>
 
@@ -284,9 +284,9 @@ print("carta.html")
 # Um kit (Eric, 2026-11-25): várias cartas vendidas juntas, montado na tela
 # Shop do card tracker. A página lê o kit de store_bundles pelo id.
 kit = f'''
-<div class="pagehead">
+<div class="pagehead compact">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; Kit</p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; <span data-crumb>Kit</span></p>
   </div>
 </div>
 
@@ -336,9 +336,9 @@ page("selados", "Selados | HOTARU", selados, "selados.html",
 print("selados.html")
 
 selado = f'''
-<div class="pagehead">
+<div class="pagehead compact">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="selados.html">Selados</a></p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="selados.html">Selados</a> &nbsp;/&nbsp; <span data-crumb>Selado</span></p>
   </div>
 </div>
 
