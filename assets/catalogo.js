@@ -459,10 +459,21 @@
 			: el('span', {class: cls}, badge.label);
 	}
 
-	function finishTags(group) {
+	// Na foto de um tile, só o brilho (Holo, Reverse Holo...), para as etiquetas
+	// não taparem o nome da carta; a página da carta mostra a pilha inteira.
+	function finishTags(group, {tile = false} = {}) {
 		const badges = [...badgesOf(readFinish(group.finish, group.cardId, group.rarity)), ...markBadges(group)];
+		const shown = tile ? badges.filter((badge) => badge.shine) : badges;
 
-		return badges.length ? el('div', {class: 'finish-tags'}, badges.map(badgeTag)) : null;
+		return shown.length ? el('div', {class: 'finish-tags'}, shown.map(badgeTag)) : null;
+	}
+
+	// O resto das etiquetas de um tile, como texto abaixo da coleção: edição,
+	// stamp, promo, tamanho, raridade e estado, cada uma com o seu "?".
+	function cardMarks(group) {
+		const badges = [...badgesOf(readFinish(group.finish, group.cardId, group.rarity)).filter((badge) => !badge.shine), ...markBadges(group)];
+
+		return badges.length ? el('p', {class: 'card-marks'}, withFinishHelp([], badges)) : null;
 	}
 
 	// O mesmo balão onde a etiqueta aparece como texto (a ficha e as linhas
@@ -711,6 +722,14 @@
 		return node;
 	}
 
+	// Uma foto que não carrega vira o quadro com o nome, o mesmo das cartas
+	// sem foto, em vez de um espaço vazio com o texto alternativo escuro.
+	function withFallback(img, text = null) {
+		img.addEventListener('error', () => img.replaceWith(el('span', {class: `${img.className} card-pic-none`}, text)), {once: true});
+
+		return img;
+	}
+
 	// A descrição de um selado aceita um Markdown mínimo, que vira nós da
 	// página (nunca HTML): uma linha em branco separa parágrafos, linhas que
 	// começam com "- " (ou "* " e "• ") viram lista, **texto** vira negrito e
@@ -782,13 +801,24 @@
 		return blocks;
 	}
 
+	// Um prazo para uma chamada de rede: sem ele, uma resposta que não chega
+	// deixa a página em "Carregando" e o botão de fechar o pedido desligado
+	// para sempre. Navegadores sem AbortSignal.timeout esperam como antes.
+	const timeoutSignal = (ms) => (typeof AbortSignal !== 'undefined' && typeof AbortSignal.timeout === 'function' ? AbortSignal.timeout(ms) : undefined);
+	const RPC_TIMEOUT_MS = 15000;
+	const TCGDEX_TIMEOUT_MS = 8000;
+
 	// Chama uma função pública do Supabase. Lança o erro do banco, com a
-	// mensagem dele, quando a resposta não é 2xx.
+	// mensagem dele, quando a resposta não é 2xx; sem resposta no prazo, lança
+	// um erro com network: true.
 	async function rpc(name, args = {}) {
 		const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${name}`, {
 			body: JSON.stringify(args),
 			headers: {apikey: SUPABASE_KEY, 'Content-Type': 'application/json'},
 			method: 'POST',
+			signal: timeoutSignal(RPC_TIMEOUT_MS),
+		}).catch((err) => {
+			throw Object.assign(new Error(`${name}: sem resposta`), {network: true, cause: err});
 		});
 		const body = await response.json().catch(() => null);
 
@@ -1024,7 +1054,7 @@
 	// {id da carta: [números]} de uma coleção. Lança quando o TCGdex falha.
 	async function readSetDex(setId) {
 		const query = `{ cards(filters: {id: ${JSON.stringify(`${setId}-`)}}, pagination: {page: 1, itemsPerPage: 1000}) { id dexId } }`;
-		const response = await fetch(TCGDEX_GRAPHQL, {body: JSON.stringify({query}), headers: {'content-type': 'application/json'}, method: 'POST'});
+		const response = await fetch(TCGDEX_GRAPHQL, {body: JSON.stringify({query}), headers: {'content-type': 'application/json'}, method: 'POST', signal: timeoutSignal(TCGDEX_TIMEOUT_MS)});
 
 		if (!response.ok) {
 			throw new Error(`TCGdex ${response.status}`);
@@ -1110,13 +1140,14 @@
 	function shot(group, {link = true} = {}) {
 		const url = pictureUrl(group.imagePath);
 		const inner = url
-			? el('img', {alt: `${fullName(group)}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+			? withFallback(el('img', {alt: `${fullName(group)}, ${setLine(group)}`, class: 'card-pic', decoding: 'async', loading: 'lazy', src: url}), group.name)
 			: el('span', {class: 'card-pic card-pic-none'}, group.name);
 
-		// No tile, a etiqueta fica fora do link da foto, irmã dele no
-		// article (.card-item, que a posiciona), porque ela pode ser um botão.
+		// No tile, a etiqueta fica fora do link da foto, irmã dele num
+		// invólucro (.shot-wrap, que a posiciona no pé da foto), porque ela
+		// pode ser um botão.
 		return link
-			? [finishTags(group), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner)]
+			? el('div', {class: 'shot-wrap'}, finishTags(group, {tile: true}), el('a', {class: 'shot card-shot', href: cardHref(group), tabindex: '-1', 'aria-hidden': 'true'}, inner))
 			: el('div', {class: 'shot card-shot'}, finishTags(group), inner);
 	}
 
@@ -1187,6 +1218,7 @@
 				el('span', {class: 'kind'}, group.featured ? featuredMark() : null, ['Carta', languageName(group.language)].filter(Boolean).join(' · ')),
 				el('h3', null, el('a', {'aria-label': finishSummary(group) ? fullName(group) : null, href: cardHref(group)}, group.name)),
 				el('p', {class: 'card-set'}, setLine(group)),
+				cardMarks(group),
 				el('div', {class: 'price'}, el('strong', null, brl(group.price))),
 				el('div', {class: 'card-foot'},
 					el('p', {class: 'card-count'}, available(group.copies.length)),
@@ -1261,7 +1293,7 @@
 		return el('article', {class: 'product card-item set-item'},
 			el('a', {'aria-hidden': 'true', class: 'shot card-shot set-shot', href: setHref(pick.set), onclick: open, tabindex: '-1'},
 				url
-					? el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+					? withFallback(el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url}), pick.set)
 					: el('span', {class: 'card-pic card-pic-none'}, pick.set)),
 			el('div', {class: 'meta'},
 				el('span', {class: 'kind'}, featuredMark(), 'Coleção'),
@@ -1434,6 +1466,25 @@
 
 	// ------------------------------------------------------- all cards
 
+	// avulsas.html guarda no endereço a busca, os filtros e a ordem (revisão
+	// de QA de 2026-11-27), para o botão Voltar e um link compartilhado
+	// trazerem a mesma lista. A grade mostra uma página por vez, e quantas
+	// páginas estão abertas fica no estado do histórico, junto da rolagem.
+	// A ordem de abertura é a das cartas mais caras primeiro.
+	const PAGE_SIZE = 24;
+	const DEFAULT_SORT = 'price-desc';
+	const SORT_PARAMS = {name: 'nome', new: 'recentes', 'price-asc': 'menor-preco', 'price-desc': 'maior-preco', set: 'colecao'};
+	const SORT_BY_PARAM = Object.fromEntries(Object.entries(SORT_PARAMS).map(([key, name]) => [name, key]));
+
+	function keepHistory(extra) {
+		try {
+			window.history.replaceState({...(window.history.state || {}), ...extra}, '');
+		}
+		catch {
+			// O navegador limita as trocas do histórico: o endereço fica como estava.
+		}
+	}
+
 	function all(root, groups, featured = []) {
 		if (!groups.length) {
 			root.replaceChildren(message('Nenhuma carta à venda agora. Volte em breve!'));
@@ -1441,23 +1492,28 @@
 			return;
 		}
 
+		const params = new URLSearchParams(window.location.search);
+		const param = (name) => (params.get(name) || '').trim();
 		const sets = [...new Set(groups.map((group) => group.setName).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 		const languages = [...new Set(groups.map((group) => group.language).filter(Boolean))].sort((a, b) => languageName(a).localeCompare(languageName(b), 'pt-BR'));
 		const search = el('input', {'aria-label': 'Buscar cartas', class: 'card-search', placeholder: 'Buscar por nome ou coleção', type: 'search'});
-		const setSelect = el('select', {'aria-label': 'Coleção'}, el('option', {value: ''}, 'Todas as coleções'), sets.map((name) => el('option', {value: name}, name)));
+		const setSelect = el('select', {'aria-label': 'Coleção', class: 'card-set-select'}, el('option', {value: ''}, 'Todas as coleções'), sets.map((name) => el('option', {value: name}, name)));
 		const languageSelect = el('select', {'aria-label': 'Idioma'}, el('option', {value: ''}, 'Todos os idiomas'), languages.map((code) => el('option', {value: code}, languageName(code))));
-		// Região aparece quando o TCGdex responde (addRegions); até lá, e se
-		// ele não responder, a página fica como era.
-		const regionSelect = el('select', {'aria-label': 'Região', class: 'card-region', hidden: true}, el('option', {value: ''}, 'Todas as regiões'));
+		// Região aparece quando o TCGdex responde (addRegions); o lugar dela
+		// fica guardado, desligado, enquanto ele não responde, para a fila de
+		// filtros não pular. Se ele não responder, a página fica como era.
+		const regionSelect = el('select', {'aria-label': 'Região', 'aria-busy': 'true', class: 'card-region', disabled: true}, el('option', {value: ''}, 'Todas as regiões'));
 		const sortSelect = el('select', {'aria-label': 'Ordenar'},
-			el('option', {value: 'set'}, 'Por coleção'),
-			el('option', {value: 'price-asc'}, 'Menor preço'),
 			el('option', {value: 'price-desc'}, 'Maior preço'),
+			el('option', {value: 'price-asc'}, 'Menor preço'),
 			el('option', {value: 'new'}, 'Mais recentes'),
+			el('option', {value: 'set'}, 'Por coleção'),
 			el('option', {value: 'name'}, 'Nome (A–Z)')
 		);
 		const count = el('p', {class: 'card-total', role: 'status'});
+		const notice = el('p', {class: 'card-note card-notice', role: 'status'});
 		const grid = el('div', {class: 'products cards-grid'});
+		const more = el('button', {class: 'btn btn-navy card-more', hidden: true, type: 'button'});
 		const SORTS = {
 			name: (a, b) => a.name.localeCompare(b.name, 'pt-BR'),
 			new: (a, b) => b.newest.localeCompare(a.newest),
@@ -1470,52 +1526,173 @@
 			group.search = fold([group.name, group.setName, group.number, languageName(group.language), group.rarity, group.finish, finishSummary(group)].filter(Boolean).join(' '));
 		}
 
-		function draw() {
+		// O que o endereço pede, sem diferenciar maiúsculas.
+		search.value = param('busca');
+		setSelect.value = sets.find((name) => fold(name) === fold(param('colecao'))) || '';
+		languageSelect.value = languages.find((code) => code === param('idioma').toLowerCase()) || '';
+		sortSelect.value = SORT_BY_PARAM[param('ordem').toLowerCase()] || DEFAULT_SORT;
+
+		const wantedRegion = param('regiao').toLowerCase();
+		// loading: o endereço pede uma região e o TCGdex ainda não respondeu,
+		// então a lista espera em vez de mostrar tudo e encolher depois.
+		let regionState = wantedRegion ? 'loading' : 'idle';
+		let shown = Math.max(PAGE_SIZE, Number(window.history.state && window.history.state.shown) || PAGE_SIZE);
+		let urlTimer = 0;
+
+		function writeUrl() {
+			const url = new URL(window.location.href);
+			const put = (name, value) => (value ? url.searchParams.set(name, value) : url.searchParams.delete(name));
+
+			put('busca', search.value.trim());
+			put('colecao', setSelect.value);
+			put('idioma', languageSelect.value);
+			put('regiao', regionSelect.value || (regionState === 'idle' || regionState === 'ready' ? '' : wantedRegion));
+			put('ordem', sortSelect.value === DEFAULT_SORT ? '' : SORT_PARAMS[sortSelect.value]);
+
+			if (url.href !== window.location.href) {
+				try {
+					window.history.replaceState({...(window.history.state || {}), shown}, '', url);
+				}
+				catch {
+					// O navegador limita as trocas do histórico: o endereço fica como estava.
+				}
+			}
+		}
+
+		function filtered() {
 			const words = fold(search.value).split(/\s+/).filter(Boolean);
-			const shown = groups
+
+			return groups
 				.filter((group) => (!setSelect.value || group.setName === setSelect.value)
 					&& (!languageSelect.value || group.language === languageSelect.value)
 					&& (!regionSelect.value || (group.regions || []).includes(regionSelect.value))
 					&& words.every((word) => group.search.includes(word)))
 				.sort(SORTS[sortSelect.value] || SORTS.set);
-
-			count.textContent = shown.length === 1 ? '1 carta' : `${shown.length} cartas`;
-			grid.replaceChildren(...(shown.length ? shown.map(tile) : [message('Nenhuma carta com esses filtros.')]));
 		}
 
-		for (const control of [search, setSelect, languageSelect, regionSelect, sortSelect]) {
-			control.addEventListener(control === search ? 'input' : 'change', draw);
+		function clearFilters() {
+			search.value = '';
+			setSelect.value = '';
+			languageSelect.value = '';
+			regionSelect.value = '';
+			change();
+			search.focus();
 		}
 
-		// avulsas.html?colecao=<nome> abre já filtrada, como os destaques de
-		// coleção da home levam.
-		const wanted = new URLSearchParams(window.location.search).get('colecao');
+		// Nada com esses filtros: a mensagem ocupa a grade inteira e mostra o
+		// caminho de volta.
+		const empty = () => el('div', {class: 'card-empty', role: 'status'},
+			el('p', null, 'Nenhuma carta com esses filtros. Tente outro nome ou limpe os filtros.'),
+			el('p', null, 'Procurando uma carta específica? Escreva para ', el('a', {href: `mailto:${EMAIL}`}, EMAIL), '.'),
+			el('button', {class: 'btn btn-navy', onclick: clearFilters, type: 'button'}, 'Limpar filtros'));
 
-		if (wanted && sets.includes(wanted)) {
-			setSelect.value = wanted;
+		function drawMore(list) {
+			const left = list.length - shown;
+
+			more.hidden = left <= 0;
+			count.textContent = `${list.length === 1 ? '1 carta' : `${list.length} cartas`}${left > 0 ? `, mostrando as primeiras ${shown}` : ''}`;
+
+			if (left > 0) {
+				const next = Math.min(PAGE_SIZE, left);
+
+				more.textContent = `Mostrar mais ${next === 1 ? '1 carta' : `${next} cartas`} (de ${list.length})`;
+			}
 		}
 
-		// Uma coleção em destaque, nesta página, só filtra a grade.
+		function draw() {
+			if (regionState === 'loading') {
+				count.textContent = '';
+				more.hidden = true;
+				grid.replaceChildren(el('p', {class: 'card-note card-grid-note', role: 'status'}, 'Carregando as cartas da região…'));
+
+				return;
+			}
+
+			const list = filtered();
+
+			grid.replaceChildren(...(list.length ? list.slice(0, shown).map(tile) : [empty()]));
+			drawMore(list);
+		}
+
+		// Uma mudança de filtro ou de ordem volta à primeira página e guarda o
+		// endereço.
+		function change() {
+			shown = PAGE_SIZE;
+			clearTimeout(urlTimer);
+			writeUrl();
+			draw();
+		}
+
+		more.addEventListener('click', () => {
+			const list = filtered();
+			const next = list.slice(shown, shown + PAGE_SIZE).map(tile);
+
+			shown += PAGE_SIZE;
+			grid.append(...next);
+			drawMore(list);
+			keepHistory({shown});
+
+			const link = next[0] && next[0].querySelector('h3 a');
+
+			if (link) {
+				link.focus({preventScroll: true});
+			}
+		});
+
+		search.addEventListener('input', () => {
+			shown = PAGE_SIZE;
+			draw();
+			clearTimeout(urlTimer);
+			urlTimer = setTimeout(writeUrl, 300);
+		});
+
+		for (const control of [setSelect, languageSelect, regionSelect, sortSelect]) {
+			control.addEventListener('change', change);
+		}
+
+		// Uma coleção em destaque, nesta página, só filtra a grade, e leva os
+		// outros filtros embora, para a lista não ficar vazia sob uma faixa que
+		// anuncia as cartas dela.
 		const openSet = (name) => {
 			search.value = '';
+			languageSelect.value = '';
+			regionSelect.value = '';
 			setSelect.value = name;
-			draw();
+			change();
 			count.scrollIntoView({behavior: 'smooth', block: 'start'});
 		};
 		const picks = featuredCards(groups, featured);
-		const filters = el('div', {class: 'card-filters'}, search, setSelect, languageSelect, regionSelect, sortSelect);
+		const filters = el('div', {class: 'card-filters has-region'}, search, setSelect, languageSelect, regionSelect, sortSelect);
 
 		root.replaceChildren(
 			picks.length ? featuredBand(picks.map((pick) => pickTile(pick, {onOpen: openSet})), 'Em destaque') : '',
 			picks.length ? el('h2', {class: 'featured-title'}, 'Todas as cartas') : '',
-			filters, count, grid
+			filters, notice, count, grid, el('div', {class: 'card-more-box'}, more)
 		);
 		draw();
+
+		// A rolagem de quem volta de uma carta: o navegador não a devolve
+		// sozinho porque a lista chega depois da página.
+		const savedY = Number(window.history.state && window.history.state.y) || 0;
+
+		if (savedY && regionState !== 'loading') {
+			requestAnimationFrame(() => window.scrollTo(0, savedY));
+		}
+
+		if ('scrollRestoration' in window.history) {
+			window.history.scrollRestoration = 'manual';
+		}
+
+		window.addEventListener('pagehide', () => keepHistory({shown, y: window.scrollY}));
 
 		// Com as regiões lidas: o filtro oferece só as regiões que têm carta
 		// à venda, com quantas são, a busca também acha "kanto", e
 		// avulsas.html?regiao=kanto abre já filtrada.
 		addRegions(groups).then((answered) => {
+			if (!regionSelect.isConnected) {
+				return;
+			}
+
 			const counts = new Map();
 
 			for (const group of groups) {
@@ -1524,7 +1701,18 @@
 				}
 			}
 
-			if (!answered || !counts.size || !regionSelect.isConnected) {
+			regionSelect.removeAttribute('aria-busy');
+
+			if (!answered || !counts.size) {
+				regionSelect.hidden = true;
+				filters.classList.remove('has-region');
+
+				if (wantedRegion) {
+					notice.textContent = 'Não foi possível carregar as regiões agora, então a lista mostra todas as cartas.';
+					regionState = 'failed';
+					draw();
+				}
+
 				return;
 			}
 
@@ -1538,15 +1726,20 @@
 
 			regionSelect.append(...REGIONS.filter((region) => counts.has(region.id)).map((region) => el('option', {value: region.id}, `${region.name} (${counts.get(region.id)})`)));
 
-			const wantedRegion = new URLSearchParams(window.location.search).get('regiao');
-
 			if (wantedRegion && counts.has(wantedRegion)) {
 				regionSelect.value = wantedRegion;
 			}
+			else if (wantedRegion) {
+				notice.textContent = 'Não há cartas dessa região à venda agora, então a lista mostra todas as cartas.';
+			}
 
-			regionSelect.hidden = false;
-			filters.classList.add('has-region');
+			regionSelect.disabled = false;
+			regionState = 'ready';
 			draw();
+
+			if (savedY) {
+				requestAnimationFrame(() => window.scrollTo(0, savedY));
+			}
 		});
 	}
 
@@ -1711,7 +1904,7 @@
 
 		for (const lang of langs) {
 			try {
-				const response = await fetch(`${TCGDEX}/${lang}/cards/${encodeURIComponent(group.cardId)}`);
+				const response = await fetch(`${TCGDEX}/${lang}/cards/${encodeURIComponent(group.cardId)}`, {signal: timeoutSignal(TCGDEX_TIMEOUT_MS)});
 
 				if (response.ok) {
 					const card = await response.json();
@@ -2115,7 +2308,7 @@
 				const off = status === 'reserved' || status === 'gone';
 
 				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
-					item.imagePath ? el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
+					item.imagePath ? withFallback(el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)})) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
 					el('div', {class: 'cart-body'},
 						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
 						el('p', {class: 'cart-meta'}, item.kind === 'kit'
@@ -2434,7 +2627,7 @@
 	function sealedShot(product, {link = true} = {}) {
 		const url = pictureUrl(product.photos[0]);
 		const inner = url
-			? el('img', {alt: product.name, class: 'card-pic sealed-pic', decoding: 'async', loading: 'lazy', src: url})
+			? withFallback(el('img', {alt: product.name, class: 'card-pic sealed-pic', decoding: 'async', loading: 'lazy', src: url}), product.name)
 			: el('span', {class: 'card-pic card-pic-none sealed-pic'}, product.name);
 
 		return link ? el('a', {'aria-hidden': 'true', class: 'shot card-shot sealed-shot', href: sealedHref(product), tabindex: '-1'}, inner) : el('div', {class: 'shot card-shot sealed-shot'}, inner);
@@ -2727,7 +2920,7 @@
 			const url = pictureUrl(item.imagePath);
 
 			return url
-				? el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url})
+				? withFallback(el('img', {alt: '', class: 'card-pic', decoding: 'async', loading: 'lazy', src: url}), item.name)
 				: el('span', {class: 'card-pic card-pic-none'}, item.name);
 		}));
 		const off = kitOff(kit);
@@ -2819,7 +3012,7 @@
 				el('p', {class: 'card-set'}, kit.items.map((item) => item.name).join(' · ')),
 				kitPrice(kit),
 				el('div', {class: 'card-foot'},
-					el('p', {class: 'card-count'}, 'Leve junto e pague menos'),
+					el('p', {class: 'card-count'}, kit.sum > kit.price ? `Economize ${brl(Math.round((kit.sum - kit.price) * 100) / 100)}` : 'Cartas vendidas juntas'),
 					kitAdd(kit)
 				)
 			)
@@ -2881,7 +3074,7 @@
 
 		const status = el('p', {'aria-live': 'polite', class: 'buy-status', role: 'status'});
 		const cards = el('ul', {class: 'kit-cards'}, kit.items.map((item) => el('li', {class: 'kit-card'},
-			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
+			item.imagePath ? withFallback(el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)})) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
 			el('div', null,
 				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
 				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), conditionPart(item.condition)], finishWords(item.finish, item.cardId))),

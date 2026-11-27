@@ -378,6 +378,7 @@ section { padding: 76px 0; }
   border: 1px solid rgba(240, 219, 155, 0.3);
   border-radius: 6px;
   pointer-events: none;
+  z-index: 0;
 }
 
 .product .motif { position: relative; width: 46%; filter: drop-shadow(0 0 18px var(--lime-glow)); transition: transform .3s ease; }
@@ -387,8 +388,8 @@ section { padding: 76px 0; }
   position: absolute;
   top: 14px; left: 14px;
   z-index: 2;
-  font: 600 9px/1 var(--sans);
-  letter-spacing: 0.16em;
+  font: 600 11px/1 var(--sans);
+  letter-spacing: 0.1em;
   text-transform: uppercase;
   padding: 6px 10px;
   border-radius: 999px;
@@ -943,7 +944,7 @@ section { padding: 76px 0; }
 
 .card-shot .card-pic {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   display: block;
   width: 68%;
   aspect-ratio: 63 / 88;
@@ -1464,7 +1465,6 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
   display: inline-block; margin-right: 8px; padding: 3px 8px; border-radius: 999px;
   background: var(--foil); color: var(--navy-deep); font-weight: 700; letter-spacing: 0.06em;
 }
-.set-item .set-shot { background: var(--ivory); }
 .set-item .price { flex-direction: column; align-items: flex-start; gap: 2px; }
 .set-item .price strong { white-space: nowrap; }
 .set-from { font-size: 0.8rem; color: var(--ink-soft); }
@@ -1679,3 +1679,31 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 [data-catalog="all"] .card-loading, [data-catalog="sealed"] .card-loading { min-height: 70vh; }
 
 .notfound-actions { display: flex; flex-wrap: wrap; gap: 14px; }
+
+/* Num tile, a foto leva só uma etiqueta (o brilho), no pé da foto; as outras
+   vão como texto (.card-marks) e a pilha inteira fica na página da carta. */
+.shot-wrap { position: relative; }
+.shot-wrap .finish-tags { top: auto; bottom: 14px; }
+.card-marks { position: relative; z-index: 2; margin: -2px 0 8px; font-size: 0.76rem; line-height: 1.5; color: var(--ink-soft); }
+.card-marks .finish-help { margin-left: 3px; }
+
+/* A lista de cartas: aviso, vazio e "Mostrar mais". */
+.card-notice:empty { display: none; }
+.card-grid-note, .card-empty { grid-column: 1 / -1; }
+.card-empty { padding: 28px 22px; border-radius: 14px; background: var(--ivory); text-align: center; }
+.card-empty p { margin: 0 0 12px; color: var(--ink-soft); }
+.card-more-box { display: flex; justify-content: center; margin-top: 30px; }
+.card-more { width: 100%; max-width: 28rem; }
+.card-more[hidden] { display: none; }
+
+/* Num tablet, três colunas: dois tiles de 345 px faziam uma página enorme. */
+@media (min-width: 601px) and (max-width: 1000px) {
+  .cards-grid { grid-template-columns: repeat(3, 1fr); gap: 16px; }
+}
+
+/* Num celular estreito, a coleção ocupa a fila inteira e os nomes dos
+   filtros cabem (360 px cortava "Todas as coleções"). */
+@media (max-width: 480px) {
+  .card-filters input, .card-filters select { padding: 12px 10px; font-size: 0.85rem; }
+  .card-filters .card-set-select, .card-filters > :last-child { grid-column: 1 / -1; }
+}
