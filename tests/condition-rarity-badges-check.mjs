@@ -60,6 +60,7 @@ const CATALOG = [
 	listing('t-017', 'Especialona', {condition: 'Lightly Played', finish: 'Holo, 1st Edition stamp', rarity: 'Special illustration rare'}),
 	listing('t-018', 'Hiperzinha', {rarity: 'Hyper rare'}),
 	listing('30th-158', 'Mewfuturo', {finish: 'Holo', rarity: 'Futuristic Rare'}),
+	listing('mep-043', 'Rowletpromo', {finish: 'Holo', rarity: 'Promo'}),
 ];
 
 function startServer() {
@@ -243,6 +244,10 @@ try {
 		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hyper Rare?']);
 	});
 
+	await check('the 30th anniversary MEP promos get the 30 anos stamp by card, with the finish text left as Holo', async () => {
+		assert.ok((await tags(page, 'Rowletpromo')).includes('Stamp 30 anos?'));
+	});
+
 	await check('Futuristic Rare (the 30th Mew ex and Mewtwo ex) keeps its English name and gets a badge and an explainer', async () => {
 		assert.deepEqual(await tags(page, 'Mewfuturo'), ['Holo?', 'Stamp 30 anos?', 'Futuristic Rare?']);
 		await marks(page, 'Mewfuturo').nth(1).click();
@@ -283,7 +288,7 @@ try {
 		await page.locator('.card-search').fill('illustration rare');
 		assert.deepEqual((await page.locator('.cards-grid h3').allTextContents()).sort(), ['Especialona', 'Ilustrada']);
 		await page.locator('.card-search').fill('');
-		assert.equal((await page.locator('.cards-grid h3').count()), 19);
+		assert.equal((await page.locator('.cards-grid h3').count()), 20);
 	});
 
 	await check('390 px: no sideways scroll and every badge stays inside its tile', async () => {
