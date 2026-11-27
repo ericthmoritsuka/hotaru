@@ -362,7 +362,7 @@
 		'double rare': 'A raridade dos Pokémon ex de arte comum, marcada com duas estrelas pretas.',
 		'hyper rare': 'Uma versão da carta com acabamento dourado.',
 		'illustration rare': 'A ilustração ocupa a carta inteira.',
-		'mega hyper rare': 'Um Mega Pokémon ex todo dourado.',
+		'mega hyper rare': 'A raridade mais alta das coleções Mega Evolução.',
 		'secret rare': 'O número da carta é maior que o total da coleção, como 205/198.',
 		'special illustration rare': 'A ilustração ocupa a carta inteira, numa carta de Pokémon ex ou de Treinador.',
 		'ultra rare': 'Uma carta de arte completa, em geral um Pokémon ex ou um Treinador.',
