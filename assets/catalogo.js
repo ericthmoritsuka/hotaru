@@ -162,6 +162,11 @@
 	// Zamazenta V, conferido na imagem em 2026-11-26). Por isso a coleção
 	// decide, e o stamp escrito no acabamento também conta.
 	const STAMPED_SETS = {'30th': '30 anos', cel25: '25 anos'};
+	// Cartas avulsas com o stamp que o TCGdex não registra: as três promos
+	// Mega Evolução dos 30 anos (Rowlet, Litten e Popplio) trazem o stamp do
+	// Pikachu, conferido pelo Eric nas cartas dele em 2026-11-27. Pela
+	// carta, não pelo acabamento, para não mudar o texto do acabamento.
+	const STAMPED_CARDS = {'mep-043': '30 anos', 'mep-044': '30 anos', 'mep-045': '30 anos'};
 
 	const titleCase = (text) => String(text).replace(/\b\p{L}/gu, (letter) => letter.toUpperCase());
 	const setOf = (cardId) => String(cardId || '').replace(/-[^-]*$/, '');
@@ -208,6 +213,10 @@
 
 		if (STAMPED_SETS[setOf(cardId)]) {
 			add(info.stamps, STAMPED_SETS[setOf(cardId)]);
+		}
+
+		if (STAMPED_CARDS[cardId]) {
+			add(info.stamps, STAMPED_CARDS[cardId]);
 		}
 
 		return info;
