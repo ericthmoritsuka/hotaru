@@ -116,6 +116,17 @@ const condTags = (page, name) => tile(page, name).locator('.finish-tags .cond-ta
 // The open explainer holds only its title, its picture or minis, and its
 // text: no stray text node, such as the "null" that replaceChildren wrote for
 // a balloon with no picture (Eric, 2026-11-27).
+// A rarity explainer shows the corner of a real card (Eric, 2026-11-27):
+// its own picture, loaded, with alt text, inside the screen.
+async function popPicture(page, slug) {
+	const img = page.locator('#finish-pop img.finish-pop-stamp');
+
+	assert.equal(await img.getAttribute('src'), `assets/raridade-${slug}.webp`);
+	assert.match(await img.getAttribute('alt'), /^O canto de/);
+	await page.waitForFunction(() => document.querySelector('#finish-pop img').complete);
+	assert.ok(await img.evaluate((node) => node.naturalWidth === 448), `${slug}: picture did not load`);
+}
+
 async function popClean(page, label) {
 	const stray = await page.locator('#finish-pop').evaluate((node) => [...node.childNodes].filter((child) => child.nodeType !== Node.ELEMENT_NODE).map((child) => child.textContent));
 
@@ -214,7 +225,8 @@ try {
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Illustration Rare');
 		await popClean(page, 'Illustration Rare');
-		assert.equal(plain(await page.locator('.finish-pop-text').textContent()), 'A ilustração ocupa a carta inteira.');
+		assert.equal(plain(await page.locator('.finish-pop-text').textContent()), 'A ilustração ocupa a carta inteira. Tem uma estrela dourada ao lado do número.');
+		await popPicture(page, 'illustration-rare');
 		await page.keyboard.press('Escape');
 		assert.deepEqual(await tags(page, 'Duplaex'), ['Holo?', 'Double Rare?']);
 		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hyper Rare?']);
@@ -226,8 +238,22 @@ try {
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Futuristic Rare');
 		await popClean(page, 'Futuristic Rare');
-		assert.match(plain(await page.locator('.finish-pop-text').textContent()), /^Uma raridade criada na coleção de 30 anos/);
+		assert.match(plain(await page.locator('.finish-pop-text').textContent()), /^Uma raridade que estreou na coleção de 30 anos.*A estrela ao lado do número tem a cor da carta\. O Mew ex e o Mewtwo ex são exemplos\.$/);
+		await popPicture(page, 'futuristic-rare');
+
+		const box = await page.locator('#finish-pop').boundingBox();
+
+		assert.ok(box.x >= 16 && box.x + box.width <= 390 - 16 && box.y >= 0 && box.y + box.height <= 844, 'the two-card explainer fits the 390 px screen');
 		await page.keyboard.press('Escape');
+	});
+
+	await check('every rarity with a badge has its picture', async () => {
+		for (const slug of ['ace-spec-rare', 'double-rare', 'futuristic-rare', 'hyper-rare', 'illustration-rare', 'mega-hyper-rare', 'secret-rare', 'special-illustration-rare', 'ultra-rare']) {
+			const response = await page.request.get(`${ORIGIN}/assets/raridade-${slug}.webp`);
+
+			assert.equal(response.status(), 200, slug);
+			assert.equal(response.headers()['content-type'], 'image/webp', slug);
+		}
 	});
 
 	await check('Common, Uncommon, Rare, Rare Holo and Promo get no rarity badge; Promo keeps its own', async () => {
