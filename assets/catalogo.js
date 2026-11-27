@@ -301,13 +301,102 @@
 	};
 	const patternText = (pattern) => PATTERN_TEXT[pattern] || `O brilho tem um padrão próprio, ${pattern}, em vez do brilho liso.`;
 
+	// O estado e a raridade (Eric, 2026-11-27). O tracker publica o estado em
+	// inglês e por extenso (js/scan/session.js CONDITIONS: Near Mint, Lightly
+	// Played, Moderately Played, Heavily Played, Damaged). A carta é tida como
+	// Near Mint, então só quem tem outro estado ganha a etiqueta; os balões
+	// seguem os padrões de estado da TCGplayer (outubro de 2026). Um valor que
+	// não está aqui aparece como veio, sem balão, e nunca some.
+	const CONDITIONS = {
+		'damaged': {abbr: 'DMG', name: 'Danificada', rank: 4, text: 'Rasgo, furo, dobra forte, contato com água, tinta ou informação ilegível.'},
+		'heavily played': {abbr: 'HP', name: 'Muito jogada', rank: 3, text: 'Desgaste forte: bordas brancas, riscos grandes e dobras maiores, mas a carta continua inteira.'},
+		'lightly played': {abbr: 'LP', name: 'Pouco jogada', rank: 1, text: 'Sinais leves de manuseio: bordas um pouco gastas, alguns riscos e, no máximo, uma dobra pequena (até cerca de 1 cm), sem rasgos.'},
+		'moderately played': {abbr: 'MP', name: 'Jogada', rank: 2, text: 'Uso visível: bordas e cantos gastos, riscos e arranhões, dobras de até cerca de 2 cm e um pouco de sujeira.'},
+		'near mint': {abbr: 'NM', name: 'Near Mint', rank: 0},
+	};
+	const CONDITION_ABBRS = Object.fromEntries(Object.entries(CONDITIONS).map(([key, one]) => [one.abbr.toLowerCase(), key]));
+
+	// Do valor do tracker ao estado conhecido, ou null.
+	const conditionOf = (value) => {
+		const word = String(value || '').trim().toLowerCase();
+
+		return CONDITIONS[word] || CONDITIONS[CONDITION_ABBRS[word]] || null;
+	};
+	const isNearMint = (value) => !String(value || '').trim() || conditionOf(value) === CONDITIONS['near mint'];
+
+	// A etiqueta de um estado (abreviado no tile, por extenso onde o texto
+	// já o escreve), ou null no Near Mint.
+	function conditionBadge(value, {full = false} = {}) {
+		const one = conditionOf(value);
+
+		if (isNearMint(value)) {
+			return null;
+		}
+
+		return one
+			? {cls: 'cond-tag', help: `cond-${one.abbr.toLowerCase()}`, label: full ? String(value).trim() : one.abbr, title: `${one.abbr} · ${one.name}`}
+			: {cls: 'cond-tag', help: null, label: String(value).trim()};
+	}
+
+	// O estado de um tile: sem etiqueta quando alguma cópia é Near Mint (ou
+	// não tem estado); senão, o da cópia mais próxima do Near Mint. Um valor
+	// desconhecido conta como o pior.
+	function groupCondition(group) {
+		const values = (group.copies || []).map((row) => row.condition);
+
+		if (!values.length || values.some(isNearMint)) {
+			return null;
+		}
+
+		const rank = (value) => (conditionOf(value) ? conditionOf(value).rank : 9);
+
+		return values.reduce((best, value) => (rank(value) < rank(best) ? value : best));
+	}
+
+	// Da raridade de Rara Dupla (ex) para cima, com o que cada uma é. Fora
+	// daqui, nenhuma etiqueta: Comum, Incomum, Rara, Rara Holo, e a Promo, que
+	// tem a sua. Ficam de fora também as da geração anterior (Rara Holo V,
+	// VMAX e VSTAR, Radiante, Shiny, Raras Incríveis), até o Eric decidir.
+	const HIGH_RARITIES = {
+		'ace spec rare': 'Uma carta de Treinador ou de Energia de efeito poderoso; cada baralho pode ter só uma carta ACE SPEC.',
+		'double rare': 'A raridade dos Pokémon ex de arte comum, marcada com duas estrelas pretas.',
+		'hyper rare': 'Uma versão da carta com acabamento dourado.',
+		'illustration rare': 'A ilustração ocupa a carta inteira.',
+		'mega hyper rare': 'A raridade mais alta das coleções Mega Evolução.',
+		'secret rare': 'O número da carta é maior que o total da coleção, como 205/198.',
+		'special illustration rare': 'A ilustração ocupa a carta inteira, numa carta de Pokémon ex ou de Treinador.',
+		'ultra rare': 'Uma carta de arte completa, em geral um Pokémon ex ou um Treinador.',
+	};
+	const HIGH_RARITY_BY_NAME = Object.fromEntries(Object.keys(HIGH_RARITIES).map((key) => [RARITIES[key], key]));
+
+	const rarityBadge = (name) => (HIGH_RARITY_BY_NAME[name] ? {help: `rarity-${HIGH_RARITY_BY_NAME[name].replace(/ /g, '-')}`, label: name} : null);
+
+	// As etiquetas do estado e da raridade de um tile, depois das do
+	// acabamento.
+	const markBadges = (group) => [rarityBadge(group.rarity), conditionBadge(groupCondition(group))].filter(Boolean);
+
+	// O estado como texto (a ficha, as linhas de compra, o kit e o carrinho):
+	// o valor do tracker, com o "?" do balão quando ele tem um, no formato de
+	// withFinishHelp. Near Mint e sem estado ficam como texto.
+	const conditionPart = (value) => conditionBadge(value, {full: true}) || (String(value || '').trim() || null);
+
+	for (const one of Object.values(CONDITIONS)) {
+		if (one.text) {
+			HELP[`cond-${one.abbr.toLowerCase()}`] = {text: one.text, title: `${one.abbr} · ${one.name}`};
+		}
+	}
+
+	for (const [key, text] of Object.entries(HIGH_RARITIES)) {
+		HELP[`rarity-${key.replace(/ /g, '-')}`] = {text, title: RARITIES[key]};
+	}
+
 	const helpAttrs = (badge, cls) => ({
 		'aria-expanded': 'false',
-		'aria-label': `${badge.label}: o que é?`,
+		'aria-label': `${badge.title || badge.label}: o que é?`,
 		class: cls,
 		'data-finish-kind': badge.help,
 		'data-pattern': badge.pattern || null,
-		'data-title': badge.label,
+		'data-title': badge.title || badge.label,
 		type: 'button',
 	});
 
@@ -315,7 +404,7 @@
 
 	// Uma etiqueta no canto da foto, como as do resto do site (.tag).
 	function badgeTag(badge) {
-		const cls = `tag ${badge.shine ? 'foil finish-tag' : 'stamp-tag'}`;
+		const cls = `tag ${badge.shine ? 'foil finish-tag' : badge.cls || 'stamp-tag'}`;
 
 		return badge.help
 			? el('button', helpAttrs(badge, `${cls} finish-tag-help`), badge.label, helpMark())
@@ -323,7 +412,7 @@
 	}
 
 	function finishTags(group) {
-		const badges = badgesOf(readFinish(group.finish, group.cardId, group.rarity));
+		const badges = [...badgesOf(readFinish(group.finish, group.cardId, group.rarity)), ...markBadges(group)];
 
 		return badges.length ? el('div', {class: 'finish-tags'}, badges.map(badgeTag)) : null;
 	}
@@ -341,6 +430,9 @@
 
 		return !normal || badges.some((badge) => badge.shine) ? badges : [{label: 'Normal', shine: true}, ...badges];
 	}
+
+	// Uma parte de texto com o seu "?", quando a parte é uma etiqueta.
+	const textWithHelp = (part) => (typeof part === 'string' || !part ? part : [part.label, badgeHelp(part)]);
 
 	// Um texto com partes separadas por " · ", com o "?" logo depois de
 	// cada etiqueta que tem balão.
@@ -374,10 +466,10 @@
 		const pairs = {edition: ['shadowless', 'unlimited'], shine: ['holo', 'reverse']};
 
 		return [
-			el('p', {class: 'finish-pop-title'}, button.dataset.title || help.title),
+			el('p', {class: `finish-pop-title${help.picture || help.minis ? '' : ' finish-pop-title-alone'}`}, button.dataset.title || help.title),
 			help.picture
 				? el('img', {alt: help.picture.alt, class: 'finish-pop-stamp', height: String(help.picture.height), src: help.picture.src, width: String(help.picture.width)})
-				: el('div', {class: 'finish-pop-cards'}, pairs[help.minis].map((one) => miniCard(one, one === kind))),
+				: help.minis ? el('div', {class: 'finish-pop-cards'}, pairs[help.minis].map((one) => miniCard(one, one === kind))) : null,
 			el('p', {class: 'finish-pop-text'}, pattern ? `${patternText(pattern)} ${help.text}` : help.text),
 		];
 	}
@@ -1442,8 +1534,8 @@
 			['Coleção', group.setName],
 			['Número', group.number],
 			['Idioma', languageName(group.language)],
-			['Raridade', group.rarity ? [group.rarity, badgeHelp(badges.find((badge) => badge.help === 'promo'))] : null],
-			['Estado', [...group.conditions].join(', ')],
+			['Raridade', group.rarity ? [group.rarity, badgeHelp(badges.find((badge) => badge.help === 'promo') || rarityBadge(group.rarity))] : null],
+			['Estado', group.conditions.size ? [...group.conditions].flatMap((value, i) => [i ? ', ' : null, textWithHelp(conditionPart(value))]) : null],
 			['Acabamento', group.finish ? [shine ? shine.label : 'Normal', badgeHelp(shine)] : null],
 			['Edição', listed(badges.filter((badge) => info.editions.includes(badge.label)))],
 			['Stamp', listed(info.stamps.map((name) => ({...badges.find((badge) => badge.label === stampLabel(name)), text: name})))],
@@ -1519,6 +1611,7 @@
 				// O brilho e a edição da cópia; o stamp é da coleção, e fica na
 				// ficha.
 				const words = row.finish ? finishWords(finishName(row.finish), group.cardId).filter((badge) => !/^Stamp /.test(badge.label)) : [];
+				const state = conditionPart(row.condition);
 				const label = [row.condition, ...words.map((badge) => badge.label)].filter(Boolean).join(' · ') || 'Cópia';
 				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
 					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
@@ -1539,7 +1632,11 @@
 				const inside = total - free.length;
 
 				return el('div', {class: 'buy-line'},
-					el('p', {class: 'buy-label'}, el('strong', null, label), words.map(badgeHelp), ` · ${brl(row.price_brl)} · ${available(total)}`),
+					el('p', {class: 'buy-label'},
+						typeof state === 'object' && state
+							? [el('strong', null, state.label), badgeHelp(state), words.length ? [' · ', el('strong', null, words.map((badge) => badge.label).join(' · '))] : null]
+							: el('strong', null, label),
+						words.map(badgeHelp), ` · ${brl(row.price_brl)} · ${available(total)}`),
 					free.length
 						? el('div', {class: 'buy-actions'}, free.length > 1 ? qty : null, button)
 						: el('p', {class: 'buy-all-in'}, 'Todas estão no seu carrinho. ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')),
@@ -1973,7 +2070,7 @@
 						el('p', {class: 'cart-name'}, el('a', {href: item.kind === 'kit' ? kitHref(item) : item.kind === 'sealed' ? `selado.html?id=${encodeURIComponent(item.productId)}` : `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.kind === 'kit' ? `Kit ${item.name}` : item.name)),
 						el('p', {class: 'cart-meta'}, item.kind === 'kit'
 							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
-							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition], finishWords(item.finish, item.cardId, {normal: true}))),
+							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), conditionPart(item.condition)], finishWords(item.finish, item.cardId, {normal: true}))),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
@@ -2737,7 +2834,7 @@
 			item.imagePath ? el('img', {alt: '', class: 'kit-card-pic', loading: 'lazy', src: pictureUrl(item.imagePath)}) : el('span', {'aria-hidden': 'true', class: 'kit-card-pic cart-pic-none'}),
 			el('div', null,
 				el('p', {class: 'kit-card-name'}, el('a', {href: `carta.html?c=${encodeURIComponent(item.cardId)}&l=${encodeURIComponent(item.language)}${item.finish ? `&a=${encodeURIComponent(item.finish)}` : ''}`}, item.name)),
-				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), item.condition], finishWords(item.finish, item.cardId))),
+				el('p', {class: 'kit-card-meta'}, withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), conditionPart(item.condition)], finishWords(item.finish, item.cardId))),
 				el('p', {class: 'kit-card-alone'}, `Separada: ${brl(item.price)}`)))));
 
 		root.replaceChildren(el('div', {class: 'card-detail kit-detail'},
