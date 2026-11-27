@@ -59,6 +59,7 @@ const CATALOG = [
 	listing('t-016', 'Duplaex', {rarity: 'Double rare', finish: 'Holo'}),
 	listing('t-017', 'Especialona', {condition: 'Lightly Played', finish: 'Holo, 1st Edition stamp', rarity: 'Special illustration rare'}),
 	listing('t-018', 'Hiperzinha', {rarity: 'Hyper rare'}),
+	listing('30th-158', 'Mewfuturo', {finish: 'Holo', rarity: 'Futuristic Rare'}),
 ];
 
 function startServer() {
@@ -219,6 +220,16 @@ try {
 		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hiper Rara?']);
 	});
 
+	await check('Futuristic Rare (the 30th Mew ex and Mewtwo ex) keeps its English name and gets a badge and an explainer', async () => {
+		assert.deepEqual(await tags(page, 'Mewfuturo'), ['Holo?', 'Stamp 30 anos?', 'Futuristic Rare?']);
+		await tile(page, 'Mewfuturo').locator('.finish-tags .tag', {hasText: 'Futuristic'}).click();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Futuristic Rare');
+		await popClean(page, 'Futuristic Rare');
+		assert.match(plain(await page.locator('.finish-pop-text').textContent()), /^Uma raridade criada na coleção de 30 anos/);
+		await page.keyboard.press('Escape');
+	});
+
 	await check('Comum, Incomum, Rara, Rara Holo and Promo get no rarity badge; Promo keeps its own', async () => {
 		assert.deepEqual(await tags(page, 'Comumzinha'), []);
 		assert.deepEqual(await tags(page, 'Incomumzinha'), []);
@@ -235,7 +246,7 @@ try {
 		await page.locator('.card-search').fill('ilustração rara');
 		assert.deepEqual((await page.locator('.cards-grid h3').allTextContents()).sort(), ['Especialona', 'Ilustrada']);
 		await page.locator('.card-search').fill('');
-		assert.equal((await page.locator('.cards-grid h3').count()), 18);
+		assert.equal((await page.locator('.cards-grid h3').count()), 19);
 	});
 
 	await check('390 px: no sideways scroll and every badge stays inside its tile', async () => {
