@@ -9,8 +9,8 @@
 // explainer inside the screen without opening the card; MP, HP and DMG map
 // to their abbreviations; a tile with a Near Mint copy and an LP copy shows
 // none, and one with LP and MP shows the best (LP); a condition the tracker
-// does not know shows as it came, never hidden; a Rara Ilustração tile shows
-// the rarity badge with its explainer, and Comum, Incomum, Rara, Rara Holo
+// does not know shows as it came, never hidden; an Illustration Rare tile shows
+// the rarity badge with its explainer, and Common, Uncommon, Rare, Rare Holo
 // and Promo show none (Promo keeps its own badge); a tile with a rarity, a
 // finish and a condition keeps them all, in order; the card page lists the
 // conditions with the same explainer and the buy line carries it; the
@@ -208,16 +208,16 @@ try {
 		assert.equal(await condTags(page, 'Desconhecida').evaluate((node) => node.tagName), 'SPAN');
 	});
 
-	await check('a Rara Ilustração tile shows the rarity badge with its explainer', async () => {
-		assert.deepEqual(await tags(page, 'Ilustrada'), ['Ilustração Rara?']);
+	await check('an Illustration Rare tile shows the rarity badge with its explainer', async () => {
+		assert.deepEqual(await tags(page, 'Ilustrada'), ['Illustration Rare?']);
 		await tile(page, 'Ilustrada').locator('.finish-tags .tag').click();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
-		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Ilustração Rara');
-		await popClean(page, 'Ilustração Rara');
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Illustration Rare');
+		await popClean(page, 'Illustration Rare');
 		assert.equal(plain(await page.locator('.finish-pop-text').textContent()), 'A ilustração ocupa a carta inteira.');
 		await page.keyboard.press('Escape');
-		assert.deepEqual(await tags(page, 'Duplaex'), ['Holo?', 'Rara Dupla?']);
-		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hiper Rara?']);
+		assert.deepEqual(await tags(page, 'Duplaex'), ['Holo?', 'Double Rare?']);
+		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hyper Rare?']);
 	});
 
 	await check('Futuristic Rare (the 30th Mew ex and Mewtwo ex) keeps its English name and gets a badge and an explainer', async () => {
@@ -230,7 +230,7 @@ try {
 		await page.keyboard.press('Escape');
 	});
 
-	await check('Comum, Incomum, Rara, Rara Holo and Promo get no rarity badge; Promo keeps its own', async () => {
+	await check('Common, Uncommon, Rare, Rare Holo and Promo get no rarity badge; Promo keeps its own', async () => {
 		assert.deepEqual(await tags(page, 'Comumzinha'), []);
 		assert.deepEqual(await tags(page, 'Incomumzinha'), []);
 		assert.deepEqual(await tags(page, 'Raraseca'), []);
@@ -239,11 +239,11 @@ try {
 	});
 
 	await check('a tile with a finish, an edition, a stamp, a rarity and a condition keeps them all, the condition last', async () => {
-		assert.deepEqual(await tags(page, 'Especialona'), ['Holo?', '1ª Edição?', 'Ilustração Rara Especial?', 'LP?']);
+		assert.deepEqual(await tags(page, 'Especialona'), ['Holo?', '1ª Edição?', 'Special Illustration Rare?', 'LP?']);
 	});
 
 	await check('the search still finds a rarity, and a rarity badge does not filter anything out', async () => {
-		await page.locator('.card-search').fill('ilustração rara');
+		await page.locator('.card-search').fill('illustration rare');
 		assert.deepEqual((await page.locator('.cards-grid h3').allTextContents()).sort(), ['Especialona', 'Ilustrada']);
 		await page.locator('.card-search').fill('');
 		assert.equal((await page.locator('.cards-grid h3').count()), 19);
@@ -284,7 +284,7 @@ try {
 
 		await page.goto(`${ORIGIN}/carta.html?c=t-010&l=en&a=Normal`);
 		await page.locator('.card-facts').waitFor();
-		assert.match(plain(await page.locator('.card-facts').textContent()), /RaridadeIlustração Rara\?/);
+		assert.match(plain(await page.locator('.card-facts').textContent()), /RaridadeIllustration Rare\?/);
 		assert.equal(await page.locator('.finish-tags .tag').count(), 1, 'the photo carries the rarity badge');
 	});
 
@@ -308,7 +308,7 @@ try {
 		await narrow.page.goto(`${ORIGIN}/carta.html?c=t-017&l=en&a=${encodeURIComponent('Holo, 1st Edition stamp')}`);
 		await narrow.page.locator('.card-facts').waitFor();
 		await noSideways(narrow.page, '360 px carta');
-		assert.deepEqual((await narrow.page.locator('.finish-tags .tag').allTextContents()).map(plain), ['Holo?', '1ª Edição?', 'Ilustração Rara Especial?', 'LP?']);
+		assert.deepEqual((await narrow.page.locator('.finish-tags .tag').allTextContents()).map(plain), ['Holo?', '1ª Edição?', 'Special Illustration Rare?', 'LP?']);
 	});
 
 	assert.deepEqual(narrow.errors, [], 'no page errors at 360 px');

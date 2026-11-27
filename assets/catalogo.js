@@ -79,39 +79,37 @@
 		'zh-tw': 'Chinês tradicional',
 	};
 
-	// Raridades em português, com os nomes da lista em português do próprio
-	// TCGdex (api.tcgdex.net/v2/pt/rarities, lida em 2026-11-24), com as
-	// maiúsculas uniformizadas e "Rare Secreta" corrigida para Rara Secreta.
-	// O tracker publica a raridade em inglês; uma que não está aqui aparece
-	// como veio. Futuristic Rare fica em inglês, como no TCGdex em português,
-	// e está aqui só para ganhar a etiqueta.
+	// As raridades em inglês, como o tracker publica e o TCGdex escreve
+	// (Eric, 2026-11-27: "todas as raridades devem ir em inglês"), só com as
+	// maiúsculas uniformizadas ("Illustration rare" vira Illustration Rare) e
+	// Holo Rare junto com Rare Holo. Uma que não está aqui aparece como veio.
 	const RARITIES = {
-		'ace spec rare': 'ACE SPEC Raro',
-		'amazing rare': 'Raras Incríveis',
-		'black white rare': 'Rara Preto e Branco',
-		common: 'Comum',
-		'double rare': 'Rara Dupla',
-		'full art trainer': 'Arte Completa de Treinador',
+		'ace spec rare': 'ACE SPEC Rare',
+		'amazing rare': 'Amazing Rare',
+		'black white rare': 'Black White Rare',
+		common: 'Common',
+		'double rare': 'Double Rare',
+		'full art trainer': 'Full Art Trainer',
 		'futuristic rare': 'Futuristic Rare',
-		'holo rare': 'Rara Holo',
-		'holo rare v': 'Rara Holo V',
-		'holo rare vmax': 'Rara Holo VMAX',
-		'holo rare vstar': 'Rara Holo VSTAR',
-		'hyper rare': 'Hiper Rara',
-		'illustration rare': 'Ilustração Rara',
-		'mega hyper rare': 'Mega Hiper Raro',
+		'holo rare': 'Rare Holo',
+		'holo rare v': 'Holo Rare V',
+		'holo rare vmax': 'Holo Rare VMAX',
+		'holo rare vstar': 'Holo Rare VSTAR',
+		'hyper rare': 'Hyper Rare',
+		'illustration rare': 'Illustration Rare',
+		'mega hyper rare': 'Mega Hyper Rare',
 		promo: 'Promo',
-		'radiant rare': 'Rara Radiante',
-		rare: 'Rara',
-		'rare holo': 'Rara Holo',
-		'secret rare': 'Rara Secreta',
-		'shiny rare': 'Shiny Rara',
-		'shiny rare v': 'Shiny Rara V',
-		'shiny rare vmax': 'Shiny Rara VMAX',
-		'shiny ultra rare': 'Brilhante Ultra Rara',
-		'special illustration rare': 'Ilustração Rara Especial',
-		'ultra rare': 'Ultra Rara',
-		uncommon: 'Incomum',
+		'radiant rare': 'Radiant Rare',
+		rare: 'Rare',
+		'rare holo': 'Rare Holo',
+		'secret rare': 'Secret Rare',
+		'shiny rare': 'Shiny Rare',
+		'shiny rare v': 'Shiny Rare V',
+		'shiny rare vmax': 'Shiny Rare VMAX',
+		'shiny ultra rare': 'Shiny Ultra Rare',
+		'special illustration rare': 'Special Illustration Rare',
+		'ultra rare': 'Ultra Rare',
+		uncommon: 'Uncommon',
 	};
 
 	const rarityName = (rarity) => (rarity && String(rarity).toLowerCase() !== 'none' ? RARITIES[String(rarity).toLowerCase()] || rarity : null);
@@ -355,10 +353,10 @@
 		return values.reduce((best, value) => (rank(value) < rank(best) ? value : best));
 	}
 
-	// Da raridade de Rara Dupla (ex) para cima, com o que cada uma é. Fora
-	// daqui, nenhuma etiqueta: Comum, Incomum, Rara, Rara Holo, e a Promo, que
-	// tem a sua. Ficam de fora também as da geração anterior (Rara Holo V,
-	// VMAX e VSTAR, Radiante, Shiny, Raras Incríveis), até o Eric decidir.
+	// Da raridade Double Rare (ex) para cima, com o que cada uma é. Fora
+	// daqui, nenhuma etiqueta: Common, Uncommon, Rare, Rare Holo, e a Promo,
+	// que tem a sua. Ficam de fora também as da geração anterior (Holo Rare
+	// V, VMAX e VSTAR, Radiant, Shiny, Amazing Rare), até o Eric decidir.
 	const HIGH_RARITIES = {
 		'ace spec rare': 'Uma carta de Treinador ou de Energia de efeito poderoso; cada baralho pode ter só uma carta ACE SPEC.',
 		'double rare': 'A raridade dos Pokémon ex de arte comum, marcada com duas estrelas pretas.',
