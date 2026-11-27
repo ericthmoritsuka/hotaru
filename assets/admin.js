@@ -314,6 +314,10 @@ function productForm(product, {onDone}) {
 				photos: paths,
 				price_brl: value,
 				quantity: count,
+				// A quantidade que o formulário carregou: se alguém comprou
+				// enquanto ele estava aberto, o servidor aplica só a diferença
+				// digitada (supabase/store-hardening.sql, H3).
+				...(isNew ? {} : {expected_available: product.available}),
 			}});
 
 			if (error) {
