@@ -517,7 +517,7 @@ section { padding: 76px 0; }
   box-shadow: var(--shadow-sm);
 }
 
-.ytframe { aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--navy-deep); }
+.ytframe { position: relative; aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden; background: var(--navy-deep); }
 .ytframe iframe { display: block; width: 100%; height: 100%; border: 0; }
 
 .ytbox .plate {
@@ -1735,3 +1735,26 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
   .sealed-thumbs { position: absolute; left: 10px; bottom: 10px; z-index: 3; }
   .sealed-thumb { width: 44px; height: 44px; box-shadow: 0 2px 8px rgba(8, 20, 40, 0.35); }
 }
+
+/* A barra de baixo do carrossel: o botão Pausar e os pontos. */
+.carousel-bar { display: flex; flex-wrap: wrap; justify-content: center; align-items: center; gap: 6px 14px; margin-top: 18px; }
+.carousel-bar .carousel-dots { margin-top: 0; }
+.carousel-pause {
+  display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 6px 14px; border-radius: 999px;
+  border: 1px solid rgba(14, 31, 71, 0.5); background: #fff; color: var(--navy); cursor: pointer;
+  font: 600 11px/1 var(--sans); letter-spacing: 0.08em; text-transform: uppercase;
+}
+.carousel-pause:hover { background: var(--ivory); }
+.carousel-pause[hidden] { display: none; }
+
+/* A fachada do vídeo: a miniatura e o botão de tocar; o player só vem no
+   clique. */
+.yt-play { position: absolute; inset: 0; width: 100%; height: 100%; padding: 0; border: 0; background: var(--navy-deep); cursor: pointer; }
+.yt-thumb { display: block; width: 100%; height: 100%; object-fit: cover; }
+.yt-mark {
+  position: absolute; left: 50%; top: 50%; width: 68px; height: 48px; margin: -24px 0 0 -34px; border-radius: 14px;
+  display: grid; place-items: center; color: var(--ivory); background: rgba(8, 20, 40, 0.86);
+  box-shadow: 0 0 0 1px rgba(240, 219, 155, 0.5) inset, 0 6px 22px rgba(0, 0, 0, 0.4); transition: background 0.2s ease;
+}
+.yt-play:hover .yt-mark, .yt-play:focus-visible .yt-mark { background: var(--navy-mid); color: var(--lime); }
+.ytframe :focus-visible { outline-color: var(--lime); outline-offset: -4px; }

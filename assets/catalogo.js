@@ -567,7 +567,9 @@
 		const top = below + height > window.innerHeight - gutter && spot.top - 8 - height >= gutter ? spot.top - 8 - height : below;
 
 		node.style.left = `${Math.max(left, gutter)}px`;
-		node.style.top = `${top}px`;
+		// Nem embaixo nem em cima cabendo, o balão fica a uma margem da borda
+		// da tela, em vez de encostar nela.
+		node.style.top = `${Math.max(gutter, Math.min(top, window.innerHeight - height - gutter))}px`;
 	}
 
 	function openFinishPop(button) {
@@ -649,6 +651,13 @@
 
 			if (button && hover.matches && !button.contains(event.relatedTarget)) {
 				closeFinishPopSoon();
+			}
+		});
+		// Um balão aberto pelo teclado fecha quando o foco vai para outro lugar
+		// (o Tab seguia para a etiqueta de baixo e deixava o balão da de cima).
+		document.addEventListener('focusin', (event) => {
+			if (finishPop.button && event.target !== finishPop.button && !(finishPop.node && finishPop.node.contains(event.target))) {
+				closeFinishPop();
 			}
 		});
 		document.addEventListener('keydown', (event) => {
@@ -1360,9 +1369,10 @@
 	}
 
 	// Um carrossel de rolagem com encaixe: arrasta no celular, setas no
-	// computador e pontos embaixo. Passa sozinho devagar e para de vez quando
-	// a pessoa mexe nele, ou desde o começo quando o aparelho pede menos
-	// movimento.
+	// computador e pontos embaixo. Passa sozinho devagar, mas espera enquanto
+	// o mouse ou o foco estão nele, para de vez quando a pessoa mexe nele, e
+	// tem um botão Pausar à vista (WCAG 2.2.2) que também o retoma; um
+	// aparelho que pede menos movimento não o vê passar nem ganha o botão.
 	//
 	// Os pontos (Eric, 2026-11-25) ficam no lugar da barra de rolagem do
 	// navegador, que fica escondida: um por página, e o da página atual é um
@@ -1374,9 +1384,14 @@
 		const prev = el('button', {'aria-label': 'Cartas anteriores', class: 'carousel-arrow carousel-prev', type: 'button'}, '‹');
 		const next = el('button', {'aria-label': 'Próximas cartas', class: 'carousel-arrow carousel-next', type: 'button'}, '›');
 		const dots = el('div', {'aria-label': 'Páginas do carrossel', class: 'carousel-dots', role: 'group'});
+		const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+		const playIcon = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+		const pauseIcon = '<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M2 1h3v10H2zM7 1h3v10H7z" fill="currentColor"/></svg>';
+		const stage = el('div', {class: 'carousel-stage'}, prev, track, next);
+		const toggle = el('button', {class: 'carousel-pause', hidden: calm || slides.length < 2, type: 'button'});
 		const box = el('div', {'aria-label': label, 'aria-roledescription': 'carrossel', class: 'carousel', role: 'region'},
-			el('div', {class: 'carousel-stage'}, prev, track, next),
-			dots);
+			stage,
+			el('div', {class: 'carousel-bar'}, toggle, dots));
 		let timer = null;
 		let pages = 0;
 
@@ -1425,12 +1440,56 @@
 			next.disabled = atEnd();
 		}
 
+		// O botão mostra o que ele faz agora: Pausar enquanto passa sozinho,
+		// Continuar depois que parou (por ele ou por quem mexeu no carrossel).
+		function drawToggle() {
+			const playing = Boolean(timer);
+
+			toggle.innerHTML = playing ? pauseIcon : playIcon;
+			toggle.append(playing ? 'Pausar' : 'Continuar');
+			toggle.setAttribute('aria-label', playing ? 'Pausar a passagem automática do carrossel' : 'Continuar a passagem automática do carrossel');
+			toggle.setAttribute('aria-pressed', playing ? 'false' : 'true');
+		}
+
 		function stop() {
 			if (timer) {
 				clearInterval(timer);
 				timer = null;
 			}
+
+			drawToggle();
 		}
+
+		function play() {
+			if (timer || calm || slides.length < 2) {
+				return;
+			}
+
+			timer = setInterval(() => {
+				if (!box.isConnected) {
+					stop();
+
+					return;
+				}
+
+				// Espera, sem parar, enquanto o mouse ou o foco estão no carrossel.
+				// O botão Pausar fica de fora: quem acabou de apertar Continuar
+				// espera ver o carrossel andar.
+				if (document.hidden || stage.matches(':hover') || stage.matches(':focus-within')) {
+					return;
+				}
+
+				if (atEnd()) {
+					track.scrollTo({behavior: 'smooth', left: 0});
+				}
+				else {
+					go(currentPage() + 1);
+				}
+			}, CAROUSEL_EVERY_MS);
+			drawToggle();
+		}
+
+		toggle.addEventListener('click', () => (timer ? stop() : play()));
 
 		prev.addEventListener('click', () => {
 			stop();
@@ -1443,33 +1502,19 @@
 		track.addEventListener('scroll', draw, {passive: true});
 		window.addEventListener('resize', draw, {passive: true});
 
-		for (const type of ['pointerdown', 'wheel', 'keydown', 'focusin', 'touchstart']) {
-			box.addEventListener(type, stop, {passive: true});
-		}
-
-		const calm = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-		if (!calm && slides.length > 1) {
-			timer = setInterval(() => {
-				if (!box.isConnected) {
+		// Quem arrasta, gira a roda ou usa o teclado no carrossel já o está
+		// conduzindo: ele para (o botão vira Continuar). O foco sozinho só o
+		// faz esperar.
+		for (const type of ['pointerdown', 'wheel', 'keydown', 'touchstart']) {
+			box.addEventListener(type, (event) => {
+				// O próprio botão Pausar cuida do que faz.
+				if (!toggle.contains(event.target)) {
 					stop();
-
-					return;
 				}
-
-				if (document.hidden || box.matches(':hover')) {
-					return;
-				}
-
-				if (atEnd()) {
-					track.scrollTo({behavior: 'smooth', left: 0});
-				}
-				else {
-					go(currentPage() + 1);
-				}
-			}, CAROUSEL_EVERY_MS);
+			}, {passive: true});
 		}
 
+		play();
 		requestAnimationFrame(draw);
 
 		return box;
@@ -3145,6 +3190,30 @@
 
 	const VIEWS = {all, card: one, home};
 
+	// O quadro do YouTube da home e da Sobre é uma fachada (miniatura e botão
+	// de tocar, feitos pelo script de build.py): o player só entra no clique,
+	// do youtube-nocookie, e já toca.
+	function watchVideos() {
+		document.addEventListener('click', (event) => {
+			const button = event.target instanceof Element ? event.target.closest('.yt-play') : null;
+
+			if (!button || !/^[A-Za-z0-9_-]{11}$/.test(button.dataset.id || '')) {
+				return;
+			}
+
+			const frame = el('iframe', {
+				allow: 'accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture',
+				allowfullscreen: true,
+				referrerpolicy: 'strict-origin-when-cross-origin',
+				src: `https://www.youtube-nocookie.com/embed/${button.dataset.id}?autoplay=1&rel=0`,
+				title: 'Vídeo sobre coleções de cartas do canal Ericthm no YouTube',
+			});
+
+			button.replaceWith(frame);
+			frame.focus();
+		});
+	}
+
 	// A faixa de navegação rola quando não cabe (um celular estreito): um
 	// esmaecer na ponta avisa que há mais links, e some quando ela chega ao
 	// fim.
@@ -3165,6 +3234,7 @@
 		drawCartCount();
 		watchFinishTags();
 		watchNav();
+		watchVideos();
 
 		const mineRoot = document.querySelector('[data-catalog="mine"]');
 

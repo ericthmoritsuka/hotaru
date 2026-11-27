@@ -109,17 +109,37 @@ VIDEOS = [
 ]
 
 YT_EMBED = "https://www.youtube-nocookie.com/embed/"
+YT_THUMB = "https://i.ytimg.com/vi/"
 
+# O quadro do YouTube é uma fachada (revisão de QA, QA-03): a miniatura do
+# vídeo e um botão de tocar. O player do YouTube (cerca de 4 MB de scripts)
+# só entra quando alguém clica, e é o youtube-nocookie. A miniatura só carrega
+# perto da tela (loading="lazy"), e o vídeo é sorteado antes de ela começar a
+# carregar, sem uma primeira requisição jogada fora. O clique é tratado em
+# assets/catalogo.js (watchVideos). Sem JavaScript, fica o link do canal.
 CANAL = f'''<div class="ytbox">
       <div class="ytframe">
-        <iframe src="{YT_EMBED}{VIDEOS[0]}"
-          title="Vídeo sobre coleções de cartas do canal Ericthm no YouTube" loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-        <script>(function (v, f) {{
+        <script>(function (v, box) {{
           var id = v[Math.floor(Math.random() * v.length)];
-          if (id !== v[0]) f.src = "{YT_EMBED}" + id;
-        }})({json.dumps(VIDEOS)}, document.currentScript.previousElementSibling);</script>
+          var button = document.createElement("button");
+          var img = document.createElement("img");
+          var mark = document.createElement("span");
+          button.type = "button";
+          button.className = "yt-play";
+          button.dataset.id = id;
+          button.setAttribute("aria-label", "Assistir ao vídeo do canal Ericthm no YouTube");
+          img.className = "yt-thumb";
+          img.alt = "";
+          img.width = 480;
+          img.height = 360;
+          img.loading = "lazy";
+          img.src = "{YT_THUMB}" + id + "/hqdefault.jpg";
+          mark.className = "yt-mark";
+          mark.setAttribute("aria-hidden", "true");
+          mark.innerHTML = '<svg width="22" height="22" viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+          button.append(img, mark);
+          box.append(button);
+        }})({json.dumps(VIDEOS)}, document.currentScript.parentNode);</script>
       </div>
       <a class="plate" href="{YT}" target="_blank" rel="noopener">
         <b>@Ericthm_ · Jornada do Eric</b>

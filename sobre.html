@@ -19,7 +19,7 @@
 <meta property="og:locale" content="pt_BR">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="assets/style.css?v=3c47e1c405">
+<link rel="stylesheet" href="assets/style.css?v=6c0f205857">
 </head>
 <body>
 <a class="skip" href="#conteudo">Pular para o conteúdo</a>
@@ -262,14 +262,27 @@
     </div>
     <div class="ytbox">
       <div class="ytframe">
-        <iframe src="https://www.youtube-nocookie.com/embed/EME_g29ZMVo"
-          title="Vídeo sobre coleções de cartas do canal Ericthm no YouTube" loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-        <script>(function (v, f) {
+        <script>(function (v, box) {
           var id = v[Math.floor(Math.random() * v.length)];
-          if (id !== v[0]) f.src = "https://www.youtube-nocookie.com/embed/" + id;
-        })(["EME_g29ZMVo", "c0Azny49uPQ", "qkAC4Uh-Aw0", "TErW8C_WeT8"], document.currentScript.previousElementSibling);</script>
+          var button = document.createElement("button");
+          var img = document.createElement("img");
+          var mark = document.createElement("span");
+          button.type = "button";
+          button.className = "yt-play";
+          button.dataset.id = id;
+          button.setAttribute("aria-label", "Assistir ao vídeo do canal Ericthm no YouTube");
+          img.className = "yt-thumb";
+          img.alt = "";
+          img.width = 480;
+          img.height = 360;
+          img.loading = "lazy";
+          img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+          mark.className = "yt-mark";
+          mark.setAttribute("aria-hidden", "true");
+          mark.innerHTML = '<svg width="22" height="22" viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+          button.append(img, mark);
+          box.append(button);
+        })(["EME_g29ZMVo", "c0Azny49uPQ", "qkAC4Uh-Aw0", "TErW8C_WeT8"], document.currentScript.parentNode);</script>
       </div>
       <a class="plate" href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">
         <b>@Ericthm_ · Jornada do Eric</b>
@@ -286,7 +299,7 @@
   </div>
 </section>
 </main>
-<script src="assets/catalogo.js?v=475ec109ec" defer></script><footer class="foot" id="contato">
+<script src="assets/catalogo.js?v=4eeb22a06b" defer></script><footer class="foot" id="contato">
   <div class="wrap">
     <div class="foot-top">
       <div class="about">
