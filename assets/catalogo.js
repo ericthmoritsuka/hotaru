@@ -83,7 +83,8 @@
 	// TCGdex (api.tcgdex.net/v2/pt/rarities, lida em 2026-11-24), com as
 	// maiúsculas uniformizadas e "Rare Secreta" corrigida para Rara Secreta.
 	// O tracker publica a raridade em inglês; uma que não está aqui aparece
-	// como veio, como Futuristic Rare, que o TCGdex também não traduz.
+	// como veio. Futuristic Rare fica em inglês, como no TCGdex em português,
+	// e está aqui só para ganhar a etiqueta.
 	const RARITIES = {
 		'ace spec rare': 'ACE SPEC Raro',
 		'amazing rare': 'Raras Incríveis',
@@ -91,6 +92,7 @@
 		common: 'Comum',
 		'double rare': 'Rara Dupla',
 		'full art trainer': 'Arte Completa de Treinador',
+		'futuristic rare': 'Futuristic Rare',
 		'holo rare': 'Rara Holo',
 		'holo rare v': 'Rara Holo V',
 		'holo rare vmax': 'Rara Holo VMAX',
@@ -360,6 +362,8 @@
 	const HIGH_RARITIES = {
 		'ace spec rare': 'Uma carta de Treinador ou de Energia de efeito poderoso; cada baralho pode ter só uma carta ACE SPEC.',
 		'double rare': 'A raridade dos Pokémon ex de arte comum, marcada com duas estrelas pretas.',
+		// Só o Mewtwo ex 157/128 e o Mew ex 158/128 (TCGdex, 2026-11-27; Eric).
+		'futuristic rare': 'Uma raridade criada na coleção de 30 anos, que só o Mew ex e o Mewtwo ex têm.',
 		'hyper rare': 'Uma versão da carta com acabamento dourado.',
 		'illustration rare': 'A ilustração ocupa a carta inteira.',
 		'mega hyper rare': 'A raridade mais alta das coleções Mega Evolução.',
@@ -458,7 +462,9 @@
 		el('figcaption', null, HELP[kind].title)
 	);
 
-	// O conteúdo do balão de uma etiqueta.
+	// O conteúdo do balão de uma etiqueta. Sai sem os null: o balão de um
+	// estado ou de uma raridade não tem figura nem miniaturas, e o
+	// replaceChildren do DOM, ao contrário do el, escreveria "null".
 	function helpContent(button) {
 		const kind = button.dataset.finishKind;
 		const help = HELP[kind];
@@ -471,7 +477,7 @@
 				? el('img', {alt: help.picture.alt, class: 'finish-pop-stamp', height: String(help.picture.height), src: help.picture.src, width: String(help.picture.width)})
 				: help.minis ? el('div', {class: 'finish-pop-cards'}, pairs[help.minis].map((one) => miniCard(one, one === kind))) : null,
 			el('p', {class: 'finish-pop-text'}, pattern ? `${patternText(pattern)} ${help.text}` : help.text),
-		];
+		].filter(Boolean);
 	}
 
 	// O balão é um só na página, preso ao body, para não ser cortado pela

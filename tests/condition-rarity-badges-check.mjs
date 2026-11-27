@@ -59,6 +59,7 @@ const CATALOG = [
 	listing('t-016', 'Duplaex', {rarity: 'Double rare', finish: 'Holo'}),
 	listing('t-017', 'Especialona', {condition: 'Lightly Played', finish: 'Holo, 1st Edition stamp', rarity: 'Special illustration rare'}),
 	listing('t-018', 'Hiperzinha', {rarity: 'Hyper rare'}),
+	listing('30th-158', 'Mewfuturo', {finish: 'Holo', rarity: 'Futuristic Rare'}),
 ];
 
 function startServer() {
@@ -112,6 +113,15 @@ const tile = (page, name) => page.locator('.card-item', {has: page.locator('h3',
 const tags = async (page, name) => (await tile(page, name).locator('.finish-tags .tag').allTextContents()).map(plain);
 const condTags = (page, name) => tile(page, name).locator('.finish-tags .cond-tag');
 
+// The open explainer holds only its title, its picture or minis, and its
+// text: no stray text node, such as the "null" that replaceChildren wrote for
+// a balloon with no picture (Eric, 2026-11-27).
+async function popClean(page, label) {
+	const stray = await page.locator('#finish-pop').evaluate((node) => [...node.childNodes].filter((child) => child.nodeType !== Node.ELEMENT_NODE).map((child) => child.textContent));
+
+	assert.deepEqual(stray, [], `${label}: stray text in the explainer`);
+}
+
 async function noSideways(page, label) {
 	const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
@@ -161,6 +171,7 @@ try {
 		await condTags(page, 'Lpsolo').click();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'LP · Pouco jogada');
+		await popClean(page, 'LP');
 		assert.match(plain(await page.locator('.finish-pop-text').textContent()), /^Sinais leves de manuseio: bordas um pouco gastas.*até cerca de 1 cm.*sem rasgos\.$/);
 		assert.equal(await page.locator('.finish-pop img, .finish-pop-cards').count(), 0, 'a condition explainer has no picture');
 		assert.equal(new URL(page.url()).pathname, '/avulsas.html');
@@ -180,6 +191,7 @@ try {
 			await condTags(page, name).click();
 			await page.locator('#finish-pop').waitFor({state: 'visible'});
 			assert.equal(plain(await page.locator('.finish-pop-title').textContent()), title);
+			await popClean(page, abbr);
 			assert.match(plain(await page.locator('.finish-pop-text').textContent()), text);
 			await page.keyboard.press('Escape');
 		}
@@ -201,10 +213,21 @@ try {
 		await tile(page, 'Ilustrada').locator('.finish-tags .tag').click();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Ilustração Rara');
+		await popClean(page, 'Ilustração Rara');
 		assert.equal(plain(await page.locator('.finish-pop-text').textContent()), 'A ilustração ocupa a carta inteira.');
 		await page.keyboard.press('Escape');
 		assert.deepEqual(await tags(page, 'Duplaex'), ['Holo?', 'Rara Dupla?']);
 		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hiper Rara?']);
+	});
+
+	await check('Futuristic Rare (the 30th Mew ex and Mewtwo ex) keeps its English name and gets a badge and an explainer', async () => {
+		assert.deepEqual(await tags(page, 'Mewfuturo'), ['Holo?', 'Stamp 30 anos?', 'Futuristic Rare?']);
+		await tile(page, 'Mewfuturo').locator('.finish-tags .tag', {hasText: 'Futuristic'}).click();
+		await page.locator('#finish-pop').waitFor({state: 'visible'});
+		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Futuristic Rare');
+		await popClean(page, 'Futuristic Rare');
+		assert.match(plain(await page.locator('.finish-pop-text').textContent()), /^Uma raridade criada na coleção de 30 anos/);
+		await page.keyboard.press('Escape');
 	});
 
 	await check('Comum, Incomum, Rara, Rara Holo and Promo get no rarity badge; Promo keeps its own', async () => {
@@ -223,7 +246,7 @@ try {
 		await page.locator('.card-search').fill('ilustração rara');
 		assert.deepEqual((await page.locator('.cards-grid h3').allTextContents()).sort(), ['Especialona', 'Ilustrada']);
 		await page.locator('.card-search').fill('');
-		assert.equal((await page.locator('.cards-grid h3').count()), 18);
+		assert.equal((await page.locator('.cards-grid h3').count()), 19);
 	});
 
 	await check('390 px: no sideways scroll and every badge stays inside its tile', async () => {
@@ -255,6 +278,7 @@ try {
 		await page.locator('.buy-label .finish-help').click();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'LP · Pouco jogada');
+		await popClean(page, 'buy line LP');
 		await page.keyboard.press('Escape');
 		await noSideways(page, '390 px carta');
 
