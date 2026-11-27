@@ -50,7 +50,8 @@ const picture = (url) => {
 
 // state: {catalog, bundles, sealed, featured, posts, status (id => status),
 // dex (set => {card id: [numbers]}), calls (filled), failRpc (names that
-// answer 500), slow (ms)}
+// answer 500), abortRpc (names whose connection drops), placeOrder (args,
+// json) => response, slow (ms)}
 export async function stub(context, state = {}) {
 	state.calls = state.calls || [];
 	state.requests = state.requests || [];
@@ -98,6 +99,10 @@ export async function stub(context, state = {}) {
 			await new Promise((resolve) => setTimeout(resolve, state.slow));
 		}
 
+		if ((state.abortRpc || []).includes(name)) {
+			return route.abort();
+		}
+
 		if ((state.failRpc || []).includes(name)) {
 			return json({message: 'boom'}, 500);
 		}
@@ -109,6 +114,7 @@ export async function stub(context, state = {}) {
 			store_bundles: () => json(typeof state.bundles === 'function' ? state.bundles() : state.bundles || []),
 			store_catalog: () => json(typeof state.catalog === 'function' ? state.catalog() : state.catalog || []),
 			store_featured: () => json(state.featured || []),
+			store_post: () => json(state.post || null),
 			store_posts_public: () => json(state.posts || []),
 			store_sealed: () => json(typeof state.sealed === 'function' ? state.sealed() : state.sealed || []),
 		};

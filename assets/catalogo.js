@@ -695,6 +695,10 @@
 	const languageName = (code) => LANGUAGES[String(code || '').toLowerCase()] || (code ? String(code).toUpperCase() : '');
 
 	const brl = (value) => {
+		if (!Number.isFinite(Number(value))) {
+			return 'R$ ?';
+		}
+
 		const [whole, cents] = (Math.round(Number(value) * 100) / 100).toFixed(2).split('.');
 
 		return `R$ ${whole.replace(/\B(?=(\d{3})+(?!\d))/g, '.')},${cents}`;
@@ -865,7 +869,9 @@
 		try {
 			const value = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
 
-			return Array.isArray(value) ? value.filter((item) => item && typeof item.id === 'string') : [];
+			// Uma entrada sem preço de verdade (um localStorage mexido à mão)
+			// sairia como "R$ NaN" no carrinho.
+			return Array.isArray(value) ? value.filter((item) => item && typeof item.id === 'string' && typeof item.price === 'number' && Number.isFinite(item.price)) : [];
 		}
 		catch {
 			return [];
@@ -881,6 +887,68 @@
 		}
 
 		drawCartCount(items);
+		document.dispatchEvent(new Event(CART_EVENT));
+	}
+
+	// Tudo que mostra o carrinho (os botões Adicionar, as linhas de compra,
+	// o contador) se redesenha quando ele muda, nesta página ou em outra aba
+	// (o evento storage). Um botão que saiu da página deixa de ouvir.
+	const CART_EVENT = 'hotaru:cart';
+
+	function onCart(node, redraw) {
+		const run = () => {
+			if (!node.isConnected) {
+				document.removeEventListener(CART_EVENT, run);
+
+				return;
+			}
+
+			redraw();
+		};
+
+		document.addEventListener(CART_EVENT, run);
+	}
+
+	// O limite de cartas por pedido, para os botões o dizerem em vez de
+	// esperarem o toque.
+	const cartFull = () => cardCount(readCart()) >= MAX_ORDER;
+
+	// Relê o catálogo e redesenha o que mudou; start() o liga (a leitura de
+	// uma página aberta há tempo, e antes de pôr uma cópia no carrinho).
+	let refreshNow = () => {};
+
+	// Um aviso curto no pé da tela, para o que acontece fora do botão apertado.
+	let toastTimer = 0;
+
+	function toast(text) {
+		let node = document.getElementById('toast');
+
+		if (!node) {
+			node = el('div', {class: 'toast', id: 'toast', role: 'status'});
+			document.body.append(node);
+		}
+
+		node.textContent = text;
+		node.hidden = false;
+		clearTimeout(toastTimer);
+		toastTimer = setTimeout(() => {
+			node.hidden = true;
+		}, 6000);
+	}
+
+	// Confere no Supabase, na hora de pôr no carrinho, quais destas cópias
+	// ainda estão à venda (uma página aberta há tempo pode mostrar cartas que
+	// outra pessoa já reservou). Sem resposta, deixa passar: o carrinho
+	// confere de novo.
+	async function liveOnly(ids) {
+		try {
+			const states = await rpc('listing_status', {ids});
+
+			return ids.filter((id) => (states || {})[id] === 'available');
+		}
+		catch {
+			return ids;
+		}
 	}
 
 	// As cópias que o carrinho leva: as avulsas e as de cada kit.
@@ -1051,7 +1119,19 @@
 		}
 	}
 
+	// Uma coleção que ninguém pediu em 30 dias sai do guardado, para ele não
+	// crescer sem fim.
+	const DEX_PRUNE_MS = 30 * 24 * 60 * 60 * 1000;
+
 	function writeDexCache(cache) {
+		const now = Date.now();
+
+		for (const [setId, saved] of Object.entries(cache)) {
+			if (!saved || now - Number(saved.seen || saved.at || 0) > DEX_PRUNE_MS) {
+				delete cache[setId];
+			}
+		}
+
 		try {
 			localStorage.setItem(DEX_KEY, JSON.stringify(cache));
 		}
@@ -1108,11 +1188,23 @@
 
 		await Promise.all([...bySet].map(async ([setId, members]) => {
 			const saved = cache[setId];
-			const fresh = saved && saved.cards && now - Number(saved.at || 0) < DEX_KEEP_MS && members.every((group) => Object.hasOwn(saved.cards, group.cardId));
+			// Uma carta que o TCGdex não devolveu da última vez também conta como
+			// lida (misses), em vez de pedir a coleção toda a cada visita.
+			const known = (group) => Object.hasOwn(saved.cards, group.cardId) || now - Number((saved.misses || {})[group.cardId] || 0) < DEX_KEEP_MS;
+			const fresh = saved && saved.cards && now - Number(saved.at || 0) < DEX_KEEP_MS && members.every(known);
 
 			if (!fresh) {
 				try {
-					cache[setId] = {at: now, cards: await readSetDex(setId)};
+					const cards = await readSetDex(setId);
+					const misses = {...((saved && saved.misses) || {})};
+
+					for (const group of members) {
+						if (!Object.hasOwn(cards, group.cardId)) {
+							misses[group.cardId] = now;
+						}
+					}
+
+					cache[setId] = {at: now, cards, misses, seen: now};
 				}
 				catch {
 					// Sem rede ou TCGdex fora do ar: usa o que estiver guardado.
@@ -1124,6 +1216,8 @@
 			if (!cards) {
 				return;
 			}
+
+			cache[setId].seen = now;
 
 			answered = true;
 
@@ -1188,23 +1282,33 @@
 			const inCart = cartIds();
 			const free = group.copies.filter((row) => !inCart.has(row.id));
 			const there = group.copies.length - free.length;
+			// No limite do pedido, todo botão que ainda adicionaria algo diz isso.
+			const capped = free.length > 0 && cartFull();
 
-			button.disabled = !free.length;
+			button.disabled = !free.length || capped;
 			button.classList.toggle('quick-in', there > 0);
-			button.setAttribute('aria-label', free.length ? `Adicionar ${fullName(group)} ao carrinho` : `${fullName(group)}: todas no carrinho`);
-			button.replaceChildren(...label(there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
+			button.setAttribute('aria-label', capped ? `Um pedido leva até ${MAX_ORDER} cartas` : free.length ? `Adicionar ${fullName(group)} ao carrinho` : `${fullName(group)}: todas no carrinho`);
+			button.replaceChildren(...label(capped ? `Limite de ${MAX_ORDER}` : there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar'));
 		}
 
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
 			const inCart = cartIds();
-			const next = group.copies.find((row) => !inCart.has(row.id));
+			const free = group.copies.filter((row) => !inCart.has(row.id));
 
-			if (!next) {
+			if (!free.length || cartFull()) {
 				return;
 			}
 
-			if (cardCount(readCart()) >= MAX_ORDER) {
-				button.textContent = `Até ${MAX_ORDER} cartas`;
+			// Confere se a cópia ainda está à venda antes de pôr no carrinho.
+			button.disabled = true;
+
+			const live = new Set(await liveOnly(free.map((row) => row.id)));
+			const next = free.find((row) => live.has(row.id));
+
+			if (!next) {
+				draw();
+				toast('Essa carta acabou de ser reservada por outra pessoa.');
+				refreshNow();
 
 				return;
 			}
@@ -1212,6 +1316,7 @@
 			writeCart([...readCart(), cartItem(next)]);
 			draw();
 		});
+		onCart(button, draw);
 		draw();
 
 		return button;
@@ -1914,6 +2019,7 @@
 			}
 
 			const single = variants.size === 1;
+			const capped = cartFull();
 			const lines = [...variants.values()].map(({free, row, total}) => {
 				// O brilho e a edição da cópia; o stamp é da coleção, e fica na
 				// ficha.
@@ -1922,7 +2028,7 @@
 				const label = [row.condition, ...words.map((badge) => badge.label)].filter(Boolean).join(' · ') || 'Cópia';
 				const qty = el('select', {'aria-label': `Quantidade, ${label}`, class: 'buy-qty'},
 					free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
-				const button = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+				const button = el('button', {class: 'btn btn-gold buy-add', disabled: capped, onclick: async () => {
 					const n = Number(qty.value) || 1;
 					const cart = readCart();
 
@@ -1932,12 +2038,30 @@
 						return;
 					}
 
-					writeCart([...cart, ...free.slice(0, n).map(cartItem)]);
+					// Confere se as cópias ainda estão à venda antes de pôr no
+					// carrinho (a página pode estar aberta há tempo).
+					button.disabled = true;
+
+					const live = new Set(await liveOnly(free.map((one) => one.id)));
+					const take = free.filter((one) => live.has(one.id)).slice(0, n);
+
+					if (take.length < n) {
+						toast(take.length ? 'Algumas cópias acabaram de ser reservadas por outra pessoa.' : 'Essa carta acabou de ser reservada por outra pessoa.');
+						refreshNow();
+					}
+
+					if (!take.length) {
+						draw();
+
+						return;
+					}
+
+					writeCart([...readCart(), ...take.map(cartItem)]);
 					draw();
 					// Quando não sobra cópia, o "Ir para o carrinho" da própria
 					// linha já leva adiante.
-					status.replaceChildren(n === 1 ? 'Adicionada ao carrinho.' : `${n} adicionadas ao carrinho.`, ...(free.length > n ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
-				}, type: 'button'}, 'Adicionar ao carrinho');
+					status.replaceChildren(take.length === 1 ? 'Adicionada ao carrinho.' : `${take.length} adicionadas ao carrinho.`, ...(free.length > take.length ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
+				}, type: 'button'}, capped ? `Limite de ${MAX_ORDER} cartas` : 'Adicionar ao carrinho');
 				const inside = total - free.length;
 
 				return el('div', {class: 'buy-line'},
@@ -1956,6 +2080,7 @@
 		}
 
 		draw();
+		onCart(box, draw);
 
 		return box;
 	}
@@ -2164,7 +2289,14 @@
 	// mostrar mais de um.
 	function pixBlock(order) {
 		const Pix = window.HotaruPix;
-		const code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+		let code = null;
+
+		try {
+			code = Pix ? Pix.brCode({amount: order.total, description: `Pedido ${order.code}`, txid: Pix.txidFor(order.code)}) : null;
+		}
+		catch {
+			// Um total que não é um valor de verdade: cai na mensagem abaixo.
+		}
 
 		if (!code) {
 			return message('Não foi possível montar o código Pix. Escreva para ' + EMAIL + ' com o número do pedido.');
@@ -2242,6 +2374,7 @@
 			el('p', {class: 'eyebrow'}, 'Pedido recebido'),
 			el('h2', null, `Pedido ${order.code}`),
 			el('p', {class: 'order-total'}, `Total: ${brl(order.total)}`),
+			Number.isFinite(order.expected) && Math.abs(order.total - order.expected) > 0.004 ? el('p', {class: 'cart-changed'}, `O total ficou em ${brl(order.total)}, e não em ${brl(order.expected)} como no carrinho: um preço mudou antes de o pedido fechar.`) : null,
 			el('p', null, `Pague com Pix até ${when(order.reservedUntil)}. Até lá, as cartas ficam reservadas para você.`),
 			pixBlock(order),
 			receiptBox(order),
@@ -2261,17 +2394,63 @@
 	// à venda com outro preço ou outras cópias (o Eric trocou uma cópia
 	// vendida) fica como está agora, e uma avulsa que passou a vir nele sai
 	// do carrinho.
+	//
+	// Junto do estado vêm o preço de agora e a reposição (revisão de
+	// engenharia de 2026-11-27, M1 e M2). O preço que o pedido cobra é o de
+	// quando ele fecha, e o carrinho guardava o de quando a carta entrou: o
+	// catálogo público (store_catalog, store_sealed) traz o de agora, sem
+	// mudar nada no banco. E uma cópia que outra pessoa levou não é o fim da
+	// carta: se há outra igual (mesma carta, idioma e acabamento; mesmo
+	// produto), ela é oferecida no lugar. Sem resposta do catálogo, o carrinho
+	// só perde isso.
+	const isSingle = (item) => item.kind !== 'kit' && item.kind !== 'sealed';
+
+	// Outra cópia igual à de uma linha que saiu de venda, ou null.
+	function findSwap(item, rows, products, taken) {
+		if (item.kind === 'sealed') {
+			const product = (products || []).find((one) => one.id === item.productId);
+			const unit = product && product.units.find((id) => !taken.has(id));
+
+			return unit ? sealedItem(product, unit) : null;
+		}
+
+		const same = (rows || [])
+			.filter((row) => isCardRow(row) && row.card_id === item.cardId && (row.language || '') === item.language && (row.finish ? finishName(row.finish) : null) === (item.finish || null) && !taken.has(row.id))
+			.sort((a, b) => Number(Boolean(a.in_kit)) - Number(Boolean(b.in_kit)) || Number(a.price_brl) - Number(b.price_brl));
+
+		return same[0] ? cartItem(same[0]) : null;
+	}
+
 	async function cartStatuses(cart) {
 		const ids = [...cartIds(cart)];
 		const hasKits = cart.some((item) => item.kind === 'kit');
-		const [raw, kits] = await Promise.all([rpc('listing_status', {ids}), hasKits ? readKits() : []]);
+		const [raw, kits, rows, products] = await Promise.all([
+			rpc('listing_status', {ids}),
+			hasKits ? readKits() : [],
+			cart.some(isSingle) ? readCatalog().catch(() => null) : null,
+			cart.some((item) => item.kind === 'sealed') ? readSealed().catch(() => null) : null,
+		]);
 		const states = raw || {};
 		const live = new Map(kits.map((kit) => [kit.id, kit]));
+		const liveRows = new Map((rows || []).map((row) => [row.id, row]));
+		const liveProducts = new Map((products || []).map((product) => [product.id, product]));
 		const out = {};
+		const prices = {};
 		let changed = false;
 		let next = cart.map((item) => {
 			if (item.kind !== 'kit') {
 				out[item.id] = states[item.id];
+
+				const row = isSingle(item) ? liveRows.get(item.id) : null;
+				const product = item.kind === 'sealed' && out[item.id] === 'available' ? liveProducts.get(item.productId) : null;
+				const price = row ? Number(row.price_brl) : product ? product.price : null;
+
+				if (price !== null && Number.isFinite(price) && price !== item.price) {
+					prices[item.id] = {from: item.price, to: price};
+					changed = true;
+
+					return {...item, price};
+				}
 
 				return item;
 			}
@@ -2284,6 +2463,10 @@
 				out[item.id] = 'available';
 
 				if (fresh.price !== item.price || fresh.ids.join() !== (item.ids || []).join()) {
+					if (fresh.price !== item.price) {
+						prices[item.id] = {from: item.price, to: fresh.price};
+					}
+
 					changed = true;
 
 					return fresh;
@@ -2306,32 +2489,91 @@
 			writeCart(next);
 		}
 
-		return out;
+		const taken = cartIds(next);
+		const offers = {};
+
+		for (const item of next) {
+			if (item.kind === 'kit' || out[item.id] === 'available') {
+				continue;
+			}
+
+			const swap = findSwap(item, rows, products, taken);
+
+			if (swap) {
+				offers[item.id] = swap;
+				taken.add(swap.id);
+			}
+		}
+
+		return {offers, prices, statuses: out};
+	}
+
+	// O texto de um erro do banco ao fechar o pedido. O place_order responde
+	// em inglês (supabase/store-bundles.sql, store-order-limits); o comprador
+	// lê português. Um texto que não está aqui aparece como veio.
+	const ORDER_ERRORS = {
+		'A card is in the order twice.': 'Há uma carta repetida no pedido. Tire a repetida do carrinho e feche de novo.',
+		'An order holds 1 to 20 cards.': 'Um pedido leva de 1 a 20 cartas.',
+		'An order holds up to 10 kits.': 'Um pedido leva até 10 kits.',
+		'The note holds up to 500 characters.': 'A observação leva até 500 caracteres.',
+		'The shop is holding too many unpaid orders right now. Try again later.': 'A loja está com muitos pedidos esperando pagamento agora. Tente de novo mais tarde.',
+		'This connection already has orders waiting for payment. Pay one of them first.': 'Esta conexão já tem pedidos esperando o Pix. Pague um deles antes de fazer outro.',
+		'This phone already has orders waiting for payment. Pay one of them first.': 'Este telefone já tem um pedido esperando o Pix. Pague esse pedido antes de fazer outro.',
+		'Type a name of up to 80 characters.': 'Escreva um nome de até 80 caracteres.',
+		'Type a phone number of up to 40 characters.': 'Escreva um WhatsApp ou telefone de até 40 caracteres.',
+	};
+
+	// O que o formulário mostra quando o pedido não fecha: o texto do banco em
+	// português, ou como veio; e, quando a resposta nem chegou, o aviso de que
+	// o pedido pode ter sido registrado (o banco guarda o pedido antes de
+	// responder, e o comprador não teria como saber).
+	function orderErrorText(err) {
+		if (err && err.network) {
+			return `Não foi possível confirmar o pedido porque a conexão caiu. Ele pode ter sido registrado: se as suas cartas aparecerem como reservadas por outra pessoa, escreva para ${EMAIL} com o seu nome.`;
+		}
+
+		const message = String((err && err.message) || '').trim();
+
+		return `O pedido não foi fechado. ${ORDER_ERRORS[message] || message || 'Tente de novo em instantes.'}`;
 	}
 
 	function order(root) {
 		let statuses = {};
+		let offers = {};
+		let priceNotes = {};
 		let busy = false;
 		let notice = '';
 		let timer = null;
 
 		const form = el('form', {class: 'order-form', novalidate: true});
-		const nameInput = el('input', {autocomplete: 'name', id: 'order-name', maxlength: 80, required: true, type: 'text'});
-		const phoneInput = el('input', {autocomplete: 'tel', id: 'order-phone', inputmode: 'tel', maxlength: 40, required: true, type: 'text'});
+		const nameInput = el('input', {'aria-describedby': 'order-error', autocomplete: 'name', id: 'order-name', maxlength: 80, required: true, type: 'text'});
+		const phoneInput = el('input', {'aria-describedby': 'order-error', autocomplete: 'tel', id: 'order-phone', inputmode: 'tel', maxlength: 40, required: true, type: 'text'});
 		const noteInput = el('textarea', {id: 'order-note', maxlength: 500, rows: 2});
-		const formError = el('p', {class: 'order-error', role: 'alert'});
+		const formError = el('p', {class: 'order-error', id: 'order-error', role: 'alert'});
 		const submit = el('button', {class: 'btn btn-gold', id: 'order-submit', type: 'submit'}, 'Fechar pedido');
 		const list = el('ul', {class: 'cart-list'});
 		const totalLine = el('p', {class: 'cart-total'});
 		const noticeLine = el('p', {'aria-live': 'polite', class: 'cart-notice'});
+		const clean = el('button', {class: 'btn btn-navy cart-clean', hidden: true, onclick: () => {
+			const off = new Set(readCart().filter((item) => statuses[item.id] === 'reserved' || statuses[item.id] === 'gone').map((item) => item.id));
+
+			writeCart(readCart().filter((item) => !off.has(item.id)));
+			draw();
+		}, type: 'button'}, 'Remover as indisponíveis');
+		const steps = el('ol', {class: 'order-steps'},
+			el('li', null, 'Feche o pedido.'),
+			el('li', null, 'Pague com Pix em até 48 horas.'),
+			el('li', null, 'Combine a entrega.')
+		);
 
 		form.append(
 			el('label', {for: 'order-name'}, 'Seu nome'), nameInput,
-			el('label', {for: 'order-phone'}, 'Telefone ou ramal'), phoneInput,
+			el('label', {for: 'order-phone'}, 'WhatsApp ou telefone'), phoneInput,
 			el('label', {for: 'order-note'}, 'Observação (opcional)'), noteInput,
 			el('p', {class: 'order-privacy'}, 'Seu nome e telefone só servem para o Eric combinar a entrega com você.'),
 			formError,
-			submit
+			submit,
+			el('p', {class: 'order-after'}, 'Na próxima tela aparece o Pix (QR Code e copia e cola).')
 		);
 		form.addEventListener('submit', (event) => {
 			event.preventDefault();
@@ -2340,10 +2582,43 @@
 
 		const OFFLINE = 'Não foi possível conferir as cartas agora. Tente de novo em instantes.';
 		const freeItems = () => readCart().filter((item) => statuses[item.id] === 'available');
+		const isOff = (item) => statuses[item.id] === 'reserved' || statuses[item.id] === 'gone';
 
 		function remove(id) {
 			writeCart(readCart().filter((item) => item.id !== id));
 			draw();
+		}
+
+		// Troca uma linha que saiu de venda pela cópia igual que o catálogo
+		// ainda tem.
+		function swap(old) {
+			const offer = offers[old.id];
+
+			if (!offer) {
+				return;
+			}
+
+			writeCart(readCart().map((item) => (item.id === old.id ? offer : item)));
+			delete offers[old.id];
+			delete statuses[old.id];
+			draw();
+			check();
+		}
+
+		function offerLine(item) {
+			const offer = offers[item.id];
+
+			if (!offer) {
+				return null;
+			}
+
+			const what = offer.kind === 'sealed' ? 'Outra unidade igual' : 'Outra cópia igual';
+			const detail = [offer.kind === 'sealed' ? null : offer.condition, brl(offer.price)].filter(Boolean).join(' · ');
+
+			return el('p', {class: 'cart-swap'},
+				`${what} está à venda: ${detail}. `,
+				el('button', {class: 'cart-swap-btn', onclick: () => swap(item), type: 'button'}, 'Trocar por ela')
+			);
 		}
 
 		// O último pedido, enquanto o prazo para pagar não acabou.
@@ -2369,7 +2644,8 @@
 
 			list.replaceChildren(...cart.map((item) => {
 				const status = statuses[item.id];
-				const off = status === 'reserved' || status === 'gone';
+				const off = isOff(item);
+				const note = priceNotes[item.id];
 
 				return el('li', {class: `cart-item${off ? ' cart-off' : ''}`, 'data-id': item.id},
 					item.imagePath ? withFallback(el('img', {alt: '', class: 'cart-pic', loading: 'lazy', src: pictureUrl(item.imagePath)})) : el('span', {'aria-hidden': 'true', class: 'cart-pic cart-pic-none'}),
@@ -2379,6 +2655,8 @@
 							? `${kitCards(item.ids.length)}: ${item.items.map((one) => [one.name, one.condition].filter(Boolean).join(', ')).join(' · ')}`
 							: withFinishHelp([item.setName, item.number ? `nº ${item.number}` : null, languageName(item.language), conditionPart(item.condition)], finishWords(item.finish, item.cardId, {normal: true}))),
 						off ? el('p', {class: `cart-warn cart-warn-${status}`}, el('strong', null, (item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][0]), ` ${(item.kind === 'kit' ? KIT_NOTICES : NOTICES)[status][1]}`) : null,
+						off ? offerLine(item) : null,
+						note && !off ? el('p', {class: 'cart-changed'}, `O preço mudou: era ${brl(note.from)}, agora é ${brl(note.to)}.`) : null,
 						el('p', {class: 'cart-price'}, brl(item.price), item.kind === 'kit' && item.sum > item.price ? [' ', el('s', null, brl(item.sum))] : null)
 					),
 					el('button', {'aria-label': `Remover ${item.name}`, class: 'cart-remove', onclick: () => remove(item.id), type: 'button'}, 'Remover')
@@ -2388,9 +2666,11 @@
 			const free = freeItems();
 			const total = free.reduce((sum, item) => sum + item.price, 0);
 			const checked = cart.every((item) => statuses[item.id]);
+			const offCount = cart.filter(isOff).length;
 
 			totalLine.textContent = free.length ? `Total: ${brl(total)} (${kitCards(cardCount(free))})` : '';
 			noticeLine.textContent = notice;
+			clean.hidden = !offCount;
 			submit.textContent = free.length ? `Fechar pedido com ${kitCards(cardCount(free))}` : 'Fechar pedido';
 			submit.disabled = busy || !checked || !free.length;
 
@@ -2404,39 +2684,58 @@
 						el('summary', null, `Pedido ${last.code} aguardando pagamento: ver o Pix`),
 						confirmation(last)
 					) : '',
-					el('h2', {class: 'cart-head'}, 'Seu carrinho'),
 					noticeLine,
 					list,
+					clean,
 					totalLine,
-					el('h3', {class: 'order-head'}, 'Fechar o pedido'),
+					el('h2', {class: 'order-head'}, 'Fechar o pedido'),
+					steps,
 					form
 				);
 			}
 		}
 
-		// Confere no Supabase quais cartas do carrinho ainda estão à venda.
+		// Confere no Supabase quais cartas do carrinho ainda estão à venda, e
+		// por quanto. Resolve {ok, changed}: changed são os preços que mudaram
+		// nesta conferência.
 		async function check() {
 			const cart = readCart();
 
 			if (!cart.length) {
 				draw();
 
-				return true;
+				return {changed: 0, ok: true};
 			}
 
-			try {
-				statuses = await cartStatuses(cart);
+			let changed = 0;
 
-				if (notice === OFFLINE) {
+			try {
+				const before = statuses;
+				const result = await cartStatuses(cart);
+
+				statuses = result.statuses;
+				offers = result.offers;
+				changed = Object.keys(result.prices).length;
+				Object.assign(priceNotes, result.prices);
+
+				const lost = cart.filter((item) => before[item.id] === 'available' && result.statuses[item.id] && result.statuses[item.id] !== 'available').length;
+
+				if (changed) {
+					notice = 'Alguns preços mudaram desde que você adicionou as cartas. Confira o total abaixo.';
+				}
+				else if (lost) {
+					notice = lost === 1 ? 'Uma carta ficou indisponível desde a última conferência.' : `${lost} cartas ficaram indisponíveis desde a última conferência.`;
+				}
+				else if (notice === OFFLINE) {
 					notice = '';
 				}
 
-				return true;
+				return {changed, ok: true};
 			}
 			catch {
 				notice = OFFLINE;
 
-				return false;
+				return {changed, ok: false};
 			}
 			finally {
 				draw();
@@ -2452,14 +2751,19 @@
 
 		async function close() {
 			formError.textContent = '';
+			nameInput.removeAttribute('aria-invalid');
+			phoneInput.removeAttribute('aria-invalid');
 			notice = '';
 
 			const name = nameInput.value.trim();
 			const phone = phoneInput.value.trim();
 
 			if (!name || !phone) {
-				formError.textContent = !name ? 'Escreva o seu nome.' : 'Escreva um telefone ou ramal para o Eric falar com você.';
-				(!name ? nameInput : phoneInput).focus();
+				const field = !name ? nameInput : phoneInput;
+
+				formError.textContent = !name ? 'Escreva o seu nome.' : 'Escreva um WhatsApp ou telefone para o Eric falar com você.';
+				field.setAttribute('aria-invalid', 'true');
+				field.focus();
 
 				return;
 			}
@@ -2470,13 +2774,24 @@
 			const fresh = await check();
 			const items = freeItems();
 
-			if (!fresh || !items.length) {
+			// Um preço mudou agora há pouco: o comprador vê o total novo antes
+			// de fechar, em vez de descobrir na tela do Pix.
+			if (fresh.ok && fresh.changed) {
+				busy = false;
+				notice = 'Os preços mudaram agora há pouco. Confira o total abaixo e feche o pedido de novo.';
+				draw();
+
+				return;
+			}
+
+			if (!fresh.ok || !items.length) {
 				busy = false;
 				draw();
 
 				return;
 			}
 
+			const expected = Math.round(items.reduce((sum, item) => sum + item.price, 0) * 100) / 100;
 			let result;
 
 			try {
@@ -2490,7 +2805,7 @@
 			}
 			catch (err) {
 				busy = false;
-				formError.textContent = `O pedido não foi fechado. ${err.message || 'Tente de novo em instantes.'}`;
+				formError.textContent = orderErrorText(err);
 				draw();
 
 				return;
@@ -2505,7 +2820,7 @@
 			}
 
 			const ordered = new Set(items.map((item) => item.id));
-			const done = {code: result.code, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
+			const done = {code: result.code, expected, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
 
 			keepLastOrder(done);
 			rememberOrder(done.receiptToken);
@@ -2519,8 +2834,15 @@
 		draw();
 		check();
 		timer = setInterval(check, RECHECK_MS);
+		onCart(root, draw);
 		document.addEventListener('visibilitychange', () => {
 			if (document.visibilityState === 'visible' && readCart().length && root.contains(form)) {
+				check();
+			}
+		});
+		// O carrinho mudou em outra aba: confere de novo com o que ficou.
+		window.addEventListener('storage', (event) => {
+			if (event.key === CART_KEY && root.contains(form)) {
 				check();
 			}
 		});
@@ -2713,23 +3035,39 @@
 			const free = product.units.filter((unit) => !inCart.has(unit));
 			const there = product.units.length - free.length;
 
-			button.disabled = !free.length;
+			const capped = free.length > 0 && cartFull();
+
+			button.disabled = !free.length || capped;
 			button.classList.toggle('quick-in', there > 0);
-			button.setAttribute('aria-label', free.length ? `Adicionar ${product.name} ao carrinho` : `${product.name}: todos no carrinho`);
-			button.replaceChildren(icon(), there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar');
+			button.setAttribute('aria-label', capped ? `Um pedido leva até ${MAX_ORDER} itens` : free.length ? `Adicionar ${product.name} ao carrinho` : `${product.name}: todos no carrinho`);
+			button.replaceChildren(icon(), capped ? `Limite de ${MAX_ORDER}` : there ? `No carrinho${there > 1 ? ` (${there})` : ''}` : 'Adicionar');
 		}
 
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
 			const inCart = cartIds();
-			const unit = product.units.find((one) => !inCart.has(one));
+			const free = product.units.filter((one) => !inCart.has(one));
 
-			if (!unit || cardCount(readCart()) >= MAX_ORDER) {
+			if (!free.length || cartFull()) {
+				return;
+			}
+
+			button.disabled = true;
+
+			const live = new Set(await liveOnly(free));
+			const unit = free.find((one) => live.has(one));
+
+			if (!unit) {
+				draw();
+				toast('Esse produto acabou de ser reservado por outra pessoa.');
+				refreshNow();
+
 				return;
 			}
 
 			writeCart([...readCart(), sealedItem(product, unit)]);
 			draw();
 		});
+		onCart(button, draw);
 		draw();
 
 		return button;
@@ -2838,7 +3176,8 @@
 			const inCart = cartIds();
 			const free = product.units.filter((unit) => !inCart.has(unit));
 			const qty = el('select', {'aria-label': 'Quantidade', class: 'buy-qty'}, free.map((_, i) => el('option', {value: String(i + 1)}, String(i + 1))));
-			const add = el('button', {class: 'btn btn-gold buy-add', onclick: () => {
+			const capped = cartFull();
+			const add = el('button', {class: 'btn btn-gold buy-add', disabled: capped, onclick: async () => {
 				const n = Number(qty.value) || 1;
 				const cart = readCart();
 
@@ -2848,10 +3187,26 @@
 					return;
 				}
 
-				writeCart([...cart, ...free.slice(0, n).map((unit) => sealedItem(product, unit))]);
+				add.disabled = true;
+
+				const live = new Set(await liveOnly(free));
+				const take = free.filter((unit) => live.has(unit)).slice(0, n);
+
+				if (take.length < n) {
+					toast(take.length ? 'Algumas unidades acabaram de ser reservadas por outra pessoa.' : 'Esse produto acabou de ser reservado por outra pessoa.');
+					refreshNow();
+				}
+
+				if (!take.length) {
+					drawBuy();
+
+					return;
+				}
+
+				writeCart([...cart, ...take.map((unit) => sealedItem(product, unit))]);
 				drawBuy();
-				status.replaceChildren(n === 1 ? 'Adicionado ao carrinho.' : `${n} adicionados ao carrinho.`, ...(free.length > n ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
-			}, type: 'button'}, 'Adicionar ao carrinho');
+				status.replaceChildren(take.length === 1 ? 'Adicionado ao carrinho.' : `${take.length} adicionados ao carrinho.`, ...(free.length > take.length ? [' ', el('a', {href: 'pedido.html'}, 'Ver o carrinho')] : []));
+			}, type: 'button'}, capped ? `Limite de ${MAX_ORDER} itens` : 'Adicionar ao carrinho');
 
 			box.replaceChildren(el('div', {class: 'buy-line'},
 				el('p', {class: 'buy-label'}, available(product.units.length)),
@@ -2862,6 +3217,7 @@
 		}
 
 		drawBuy();
+		onCart(box, drawBuy);
 
 		const facts = [
 			['Tipo', product.category],
@@ -2886,15 +3242,37 @@
 
 	const SEALED_VIEWS = {homesealed: sealedHome, sealed: sealedGrid, sealedone: sealedOne};
 
-	async function startSealed(roots) {
+	// O que cada leitura trouxe da última vez: uma releitura (a página volta
+	// a ficar à vista, ou vai-se pôr algo no carrinho) só redesenha quando o
+	// banco mudou, para a página não piscar nem perder a rolagem à toa.
+	const lastRead = {};
+
+	function sameAsBefore(key, data, first) {
+		const sig = JSON.stringify(data);
+		const same = !first && lastRead[key] === sig;
+
+		lastRead[key] = sig;
+
+		return same;
+	}
+
+	async function startSealed(roots, first = true) {
 		let products;
 
 		try {
 			const [rows, featured] = await Promise.all([readSealed(), readFeatured()]);
 
+			if (sameAsBefore('sealed', [rows, featured], first)) {
+				return;
+			}
+
 			products = featuredFirst(rows, featured);
 		}
 		catch {
+			if (!first) {
+				return;
+			}
+
 			for (const root of roots) {
 				if (root.dataset.catalog === 'homesealed') {
 					(root.closest('section') || root).hidden = true;
@@ -3018,6 +3396,14 @@
 		return removed;
 	}
 
+	// O kit cabe no pedido, contando que as mesmas cartas avulsas saem dele.
+	function kitFits(kit) {
+		const ids = new Set(kit.items.map((item) => item.id));
+		const rest = readCart().filter((item) => item.id !== kit.id && !(item.kind !== 'kit' && ids.has(item.id)));
+
+		return cardCount(rest) + ids.size <= MAX_ORDER;
+	}
+
 	// Uma cópia do kit já está no carrinho em outro kit: este kit não entra.
 	const kitClash = (kit) => readCart().some((item) => item.kind === 'kit' && item.id !== kit.id && item.ids.some((id) => kit.items.some((one) => one.id === id)));
 
@@ -3033,14 +3419,28 @@
 
 		function draw() {
 			const there = readCart().some((item) => item.id === kit.id);
+			const capped = !there && !kitFits(kit);
 
-			button.disabled = there || kitClash(kit);
+			button.disabled = there || capped || kitClash(kit);
 			button.classList.toggle('quick-in', there);
-			button.setAttribute('aria-label', there ? `${kit.name}: no carrinho` : `Adicionar ${kit.name} ao carrinho`);
-			button.replaceChildren(...(status ? [] : [icon()]), there ? 'No carrinho' : (status ? 'Adicionar o kit ao carrinho' : 'Adicionar'));
+			button.setAttribute('aria-label', there ? `${kit.name}: no carrinho` : capped ? `Um pedido leva até ${MAX_ORDER} cartas` : `Adicionar ${kit.name} ao carrinho`);
+			button.replaceChildren(...(status ? [] : [icon()]), there ? 'No carrinho' : capped ? `Limite de ${MAX_ORDER}` : (status ? 'Adicionar o kit ao carrinho' : 'Adicionar'));
 		}
 
-		button.addEventListener('click', () => {
+		button.addEventListener('click', async () => {
+			button.disabled = true;
+
+			// O kit só entra com todas as cartas ainda à venda.
+			const live = new Set(await liveOnly(kit.items.map((item) => item.id)));
+
+			if (kit.items.some((item) => !live.has(item.id))) {
+				draw();
+				toast('Uma carta do kit acabou de ser reservada por outra pessoa.');
+				refreshNow();
+
+				return;
+			}
+
 			const removed = addKit(kit);
 
 			if (removed === null) {
@@ -3055,6 +3455,7 @@
 				status.replaceChildren(removed ? `Kit adicionado. ${removed === 1 ? 'A carta avulsa igual saiu' : `As ${removed} cartas avulsas iguais saíram`} do carrinho, porque já vêm no kit. ` : 'Kit adicionado ao carrinho. ', el('a', {class: 'btn btn-navy', href: 'pedido.html'}, 'Ir para o carrinho'));
 			}
 		});
+		onCart(button, draw);
 		draw();
 
 		return button;
@@ -3065,7 +3466,7 @@
 	function kitPrice(kit) {
 		return el('div', {class: 'price kit-price'},
 			el('strong', null, brl(kit.price)),
-			kit.sum > kit.price ? el('s', {'aria-label': `separadas, ${brl(kit.sum)}`}, brl(kit.sum)) : null);
+			kit.sum > kit.price ? el('s', null, el('span', {class: 'sr'}, 'separadas, '), brl(kit.sum)) : null);
 	}
 
 	function kitTile(kit) {
@@ -3164,13 +3565,21 @@
 
 	const KIT_VIEWS = {homekits: kitsHome, kit: kitOne, kits: kitsAll};
 
-	async function startKits(roots) {
+	async function startKits(roots, first = true) {
 		let kits;
 
 		try {
 			kits = await readKits();
+
+			if (sameAsBefore('kits', kits, first)) {
+				return;
+			}
 		}
 		catch {
+			if (!first) {
+				return;
+			}
+
 			for (const root of roots) {
 				if (root.dataset.catalog === 'kit') {
 					root.replaceChildren(message('Não foi possível carregar o kit agora. Tente de novo em instantes.'));
@@ -3262,39 +3671,94 @@
 
 		const roots = [...document.querySelectorAll('[data-catalog]')].filter((root) => root !== orderRoot && root !== mineRoot && !SEALED_VIEWS[root.dataset.catalog] && !KIT_VIEWS[root.dataset.catalog]);
 
+		async function loadCatalog(first) {
+			let groups;
+			let featured;
+
+			try {
+				const [rows, picks] = await Promise.all([readCatalog(), readFeatured()]);
+
+				if (sameAsBefore('catalog', [rows, picks], first)) {
+					return;
+				}
+
+				groups = groupCards(rows);
+				featured = picks;
+			}
+			catch {
+				if (!first) {
+					return;
+				}
+
+				for (const root of roots) {
+					if (root.dataset.catalog === 'home') {
+						(root.closest('section') || root).hidden = true;
+					}
+					else {
+						root.replaceChildren(message('Não foi possível carregar as cartas agora. Tente de novo em instantes.'));
+					}
+				}
+
+				return;
+			}
+
+			for (const root of roots) {
+				const view = VIEWS[root.dataset.catalog];
+
+				if (view) {
+					view(root, groups, featured);
+				}
+			}
+		}
+
+		// Uma página aberta há tempo mostra o que havia quando abriu: ao voltar
+		// à aba, ao voltar de outra página (o navegador guarda a página inteira)
+		// e antes de pôr algo no carrinho, o catálogo é lido de novo, e a página
+		// só muda se o banco mudou (revisão de engenharia, M7).
+		let refreshing = null;
+
+		refreshNow = () => {
+			if (!refreshing) {
+				featuredRead = null;
+				refreshing = Promise.all([
+					roots.length ? loadCatalog(false) : null,
+					sealedRoots.length ? startSealed(sealedRoots, false) : null,
+					kitRoots.length ? startKits(kitRoots, false) : null,
+				]).finally(() => {
+					refreshing = null;
+				});
+			}
+
+			return refreshing;
+		};
+
+		if (roots.length || sealedRoots.length || kitRoots.length) {
+			document.addEventListener('visibilitychange', () => {
+				if (document.visibilityState === 'visible') {
+					refreshNow();
+				}
+			});
+			window.addEventListener('pageshow', (event) => {
+				if (event.persisted) {
+					refreshNow();
+				}
+			});
+		}
+
+		// O carrinho mudou em outra aba: os botões e os contadores desta
+		// acompanham.
+		window.addEventListener('storage', (event) => {
+			if (event.key === CART_KEY || event.key === null) {
+				drawCartCount();
+				document.dispatchEvent(new Event(CART_EVENT));
+			}
+		});
+
 		if (!roots.length) {
 			return;
 		}
 
-		let groups;
-		let featured;
-
-		try {
-			const [rows, picks] = await Promise.all([readCatalog(), readFeatured()]);
-
-			groups = groupCards(rows);
-			featured = picks;
-		}
-		catch {
-			for (const root of roots) {
-				if (root.dataset.catalog === 'home') {
-					(root.closest('section') || root).hidden = true;
-				}
-				else {
-					root.replaceChildren(message('Não foi possível carregar as cartas agora. Tente de novo em instantes.'));
-				}
-			}
-
-			return;
-		}
-
-		for (const root of roots) {
-			const view = VIEWS[root.dataset.catalog];
-
-			if (view) {
-				view(root, groups, featured);
-			}
-		}
+		await loadCatalog(true);
 	}
 
 	if (document.readyState === 'loading') {

@@ -211,6 +211,7 @@ try {
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Stamp 30 anos');
 		await page.locator('h1').tap();
 		await page.locator('.buy-box .buy-add').first().tap();
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length > 0);
 		await page.goto(`${ORIGIN}/pedido.html`);
 
 		const cartStamp = page.locator('.cart-meta .finish-help[data-finish-kind="stamp30"]');
@@ -517,6 +518,7 @@ try {
 
 	await check('the cart and the kit page open it beside a Holo finish', async () => {
 		await page.locator('.buy-box .buy-add').first().tap();
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length > 0);
 		await page.goto(`${ORIGIN}/pedido.html`);
 
 		const cartHelp = page.locator('.cart-meta .finish-help');

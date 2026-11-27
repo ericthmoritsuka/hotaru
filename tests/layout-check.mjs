@@ -145,7 +145,7 @@ try {
 		assert.equal(await page.locator('meta[property="og:image"]').getAttribute('content'), 'https://lojahotaru.com.br/assets/og-image.jpg');
 		assert.equal(await page.locator('meta[property="og:url"]').getAttribute('content'), 'https://lojahotaru.com.br/avulsas.html');
 		assert.match(await page.locator('meta[property="og:description"]').getAttribute('content'), /cartas avulsas/i);
-		assert.ok(!(await page.locator('.foot-bot').textContent()).includes('—'));
+		assert.ok(!(await page.locator('.foot-bot').textContent()).includes('\u2014'));
 		await page.goto(`${ORIGIN}/index.html`);
 		assert.equal(await page.locator('meta[property="og:url"]').getAttribute('content'), 'https://lojahotaru.com.br/');
 	});

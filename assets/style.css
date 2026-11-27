@@ -1758,3 +1758,20 @@ a.tcard:focus-visible { outline: 3px solid var(--lime); outline-offset: 4px; }
 }
 .yt-play:hover .yt-mark, .yt-play:focus-visible .yt-mark { background: var(--navy-mid); color: var(--lime); }
 .ytframe :focus-visible { outline-color: var(--lime); outline-offset: -4px; }
+
+/* O carrinho: os passos, o que mudou, a cópia de reposição e o aviso. */
+.order-steps { margin: 0 0 14px; padding-left: 1.3em; color: var(--ink-soft); font-size: 0.9rem; }
+.order-steps li + li { margin-top: 2px; }
+.order-after { margin: 6px 0 0; font-size: 0.82rem; color: var(--ink-soft); }
+.cart-changed { margin: 0 0 4px; font-size: 0.84rem; font-weight: 600; color: #8a2b1a; }
+.cart-swap { margin: 4px 0 6px; font-size: 0.86rem; }
+.cart-swap-btn { min-height: 36px; padding: 6px 14px; border: 1px solid var(--navy); border-radius: 999px; background: #fff; color: var(--navy); font: 600 0.8rem var(--sans); cursor: pointer; }
+.cart-swap-btn:hover { background: var(--ivory); }
+.cart-clean { margin: 0 0 14px; }
+.cart-clean[hidden] { display: none; }
+.toast {
+  position: fixed; left: 50%; bottom: 20px; z-index: 80; transform: translateX(-50%);
+  max-width: min(92vw, 28rem); padding: 12px 18px; border-radius: 12px;
+  background: var(--navy-deep); color: var(--ivory); font-size: 0.9rem; line-height: 1.4; box-shadow: var(--shadow-md);
+}
+.toast[hidden] { display: none; }
