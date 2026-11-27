@@ -353,21 +353,65 @@
 		return values.reduce((best, value) => (rank(value) < rank(best) ? value : best));
 	}
 
-	// Da raridade Double Rare (ex) para cima, com o que cada uma é. Fora
-	// daqui, nenhuma etiqueta: Common, Uncommon, Rare, Rare Holo, e a Promo,
-	// que tem a sua. Ficam de fora também as da geração anterior (Holo Rare
-	// V, VMAX e VSTAR, Radiant, Shiny, Amazing Rare), até o Eric decidir.
+	// Da raridade Double Rare (ex) para cima, com o que cada uma é e o
+	// símbolo ao lado do número (Eric, 2026-11-27). Fora daqui, nenhuma
+	// etiqueta: Common, Uncommon, Rare, Rare Holo, e a Promo, que tem a sua.
+	// Ficam de fora também as da geração anterior (Holo Rare V, VMAX e VSTAR,
+	// Radiant, Shiny, Amazing Rare), até o Eric decidir.
+	//
+	// Cada uma mostra o canto de uma carta de verdade, como a estrela das
+	// promos: o código, o número e o símbolo, da imagem do TCGdex, em
+	// assets/raridade-<raridade>.webp:
+	//   double-rare                Greninja ex 30th-021
+	//   illustration-rare          Moltres 30th-130
+	//   special-illustration-rare  Greninja ex 30th-148
+	//   hyper-rare                 Pecharunt ex sv06.5-095
+	//   mega-hyper-rare            Mega Lucario ex me01-188
+	//   ace-spec-rare              Dangerous Laser sv06.5-058
+	//   ultra-rare                 Kingdra ex sv06.5-080
+	//   secret-rare                Charizard VMAX swsh3.5-74
+	//   futuristic-rare            Mew ex 30th-158 em cima, Mewtwo ex 30th-157 embaixo
+	// O Futuristic Rare: Kicks & Grips, 2026-09-09 (a arte e a estrela da cor
+	// da carta), e as duas cartas no TCGdex; o Eric pediu que elas fossem
+	// exemplos, sem dizer que são as únicas.
 	const HIGH_RARITIES = {
-		'ace spec rare': 'Uma carta de Treinador ou de Energia de efeito poderoso; cada baralho pode ter só uma carta ACE SPEC.',
-		'double rare': 'A raridade dos Pokémon ex de arte comum, marcada com duas estrelas pretas.',
-		// Só o Mewtwo ex 157/128 e o Mew ex 158/128 (TCGdex, 2026-11-27; Eric).
-		'futuristic rare': 'Uma raridade criada na coleção de 30 anos, que só o Mew ex e o Mewtwo ex têm.',
-		'hyper rare': 'Uma versão da carta com acabamento dourado.',
-		'illustration rare': 'A ilustração ocupa a carta inteira.',
-		'mega hyper rare': 'A raridade mais alta das coleções Mega Evolução.',
-		'secret rare': 'O número da carta é maior que o total da coleção, como 205/198.',
-		'special illustration rare': 'A ilustração ocupa a carta inteira, numa carta de Pokémon ex ou de Treinador.',
-		'ultra rare': 'Uma carta de arte completa, em geral um Pokémon ex ou um Treinador.',
+		'ace spec rare': {
+			alt: 'O canto de uma carta ACE SPEC: o código SFA, o número 058/064 e uma estrela rosa.',
+			text: 'Uma carta de Treinador ou de Energia de efeito poderoso; cada baralho pode ter só uma carta ACE SPEC. Tem uma estrela rosa ao lado do número.',
+		},
+		'double rare': {
+			alt: 'O canto de uma carta Double Rare: o código 30C, o número 021/128 e duas estrelas pretas.',
+			text: 'A raridade dos Pokémon ex de arte comum, com duas estrelas pretas ao lado do número.',
+		},
+		'futuristic rare': {
+			alt: 'O canto de duas cartas Futuristic Rare: o Mew ex 158/128 com uma estrela verde-água e o Mewtwo ex 157/128 com uma estrela roxa.',
+			height: 260,
+			text: 'Uma raridade que estreou na coleção de 30 anos: o Pokémon com textura metálica e cores holográficas, num cenário futurista. A estrela ao lado do número tem a cor da carta. O Mew ex e o Mewtwo ex são exemplos.',
+		},
+		'hyper rare': {
+			alt: 'O canto de uma carta Hyper Rare: o código SFA, o número 095/064 e três estrelas douradas.',
+			text: 'Uma versão da carta com acabamento dourado, com três estrelas douradas ao lado do número.',
+		},
+		'illustration rare': {
+			alt: 'O canto de uma carta Illustration Rare: o código 30C, o número 130/128 e uma estrela dourada.',
+			text: 'A ilustração ocupa a carta inteira. Tem uma estrela dourada ao lado do número.',
+		},
+		'mega hyper rare': {
+			alt: 'O canto de uma carta Mega Hyper Rare: o código MEG, o número 188/132 e uma estrela dourada de quatro pontas com borda preta.',
+			text: 'A raridade mais alta das coleções Mega Evolução, com uma estrela dourada de quatro pontas e borda preta ao lado do número.',
+		},
+		'secret rare': {
+			alt: 'O canto de uma carta Secret Rare: o número 074/073, maior que o total da coleção.',
+			text: 'O número da carta é maior que o total da coleção, como 074/073.',
+		},
+		'special illustration rare': {
+			alt: 'O canto de uma carta Special Illustration Rare: o código 30C, o número 148/128 e duas estrelas douradas.',
+			text: 'A ilustração ocupa a carta inteira, numa carta de Pokémon ex ou de Treinador. Tem duas estrelas douradas ao lado do número.',
+		},
+		'ultra rare': {
+			alt: 'O canto de uma carta Ultra Rare: o código SFA, o número 080/064 e duas estrelas brancas.',
+			text: 'Uma carta de arte completa, em geral um Pokémon ex ou um Treinador, com duas estrelas brancas ao lado do número.',
+		},
 	};
 	const HIGH_RARITY_BY_NAME = Object.fromEntries(Object.keys(HIGH_RARITIES).map((key) => [RARITIES[key], key]));
 
@@ -388,8 +432,10 @@
 		}
 	}
 
-	for (const [key, text] of Object.entries(HIGH_RARITIES)) {
-		HELP[`rarity-${key.replace(/ /g, '-')}`] = {text, title: RARITIES[key]};
+	for (const [key, {alt, height = 128, text}] of Object.entries(HIGH_RARITIES)) {
+		const slug = key.replace(/ /g, '-');
+
+		HELP[`rarity-${slug}`] = {picture: {alt, height, src: `assets/raridade-${slug}.webp`, width: 448}, text, title: RARITIES[key]};
 	}
 
 	const helpAttrs = (badge, cls) => ({
