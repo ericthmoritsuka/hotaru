@@ -2538,12 +2538,86 @@
 	// responder, e o comprador não teria como saber).
 	function orderErrorText(err) {
 		if (err && err.network) {
-			return `Não foi possível confirmar o pedido porque a conexão caiu. Ele pode ter sido registrado: se as suas cartas aparecerem como reservadas por outra pessoa, escreva para ${EMAIL} com o seu nome.`;
+			return `Não foi possível confirmar o pedido porque a conexão caiu. Toque em Fechar pedido de novo: se ele já tinha sido registrado, aparece o mesmo pedido, sem reservar as cartas outra vez. Se algo parecer errado, escreva para ${EMAIL} com o seu nome.`;
 		}
 
 		const message = String((err && err.message) || '').trim();
 
 		return `O pedido não foi fechado. ${ORDER_ERRORS[message] || message || 'Tente de novo em instantes.'}`;
+	}
+
+	// A tentativa de fechar o pedido (revisão M3): um request_id por carrinho,
+	// guardado até o pedido fechar ou o carrinho mudar. Se a resposta se
+	// perde e o comprador toca de novo, o place_order reconhece o mesmo
+	// request_id e devolve o pedido que já fez, em vez de "reservada por
+	// outra pessoa" ou um segundo pedido.
+	const ATTEMPT_KEY = 'hotaru.orderAttempt';
+
+	function newRequestId() {
+		if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+			return window.crypto.randomUUID();
+		}
+
+		const bytes = window.crypto.getRandomValues(new Uint8Array(16));
+
+		bytes[6] = (bytes[6] & 0x0f) | 0x40;
+		bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+		const hex = Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('');
+
+		return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+	}
+
+	function orderAttempt(items) {
+		const cart = items.map((item) => `${item.kind === 'kit' ? 'kit' : 'card'}:${item.id}`).sort().join(',');
+
+		try {
+			const saved = JSON.parse(localStorage.getItem(ATTEMPT_KEY) || 'null');
+
+			if (saved && saved.cart === cart && typeof saved.id === 'string') {
+				return saved.id;
+			}
+		}
+		catch {
+			// Sem armazenamento, ou mexido à mão: começa outra tentativa.
+		}
+
+		const id = newRequestId();
+
+		try {
+			localStorage.setItem(ATTEMPT_KEY, JSON.stringify({cart, id}));
+		}
+		catch {
+			// Sem armazenamento: a tentativa vale só nesta página.
+		}
+
+		return id;
+	}
+
+	function endOrderAttempt() {
+		try {
+			localStorage.removeItem(ATTEMPT_KEY);
+		}
+		catch {
+			// Nada guardado.
+		}
+	}
+
+	// Fecha o pedido com o request_id. Um banco que ainda não tem a versão
+	// com request_id (supabase/store-hardening.sql, versão 4) responde que
+	// não há função com esse argumento (PGRST202): então fecha sem ele, como
+	// antes.
+	async function placeOrder(args, requestId) {
+		try {
+			return await rpc('place_order', {...args, request_id: requestId});
+		}
+		catch (err) {
+			if (err && err.code === 'PGRST202') {
+				return rpc('place_order', args);
+			}
+
+			throw err;
+		}
 	}
 
 	function order(root) {
@@ -2590,8 +2664,22 @@
 		});
 
 		const OFFLINE = 'Não foi possível conferir as cartas agora. Tente de novo em instantes.';
-		const freeItems = () => readCart().filter((item) => statuses[item.id] === 'available');
-		const isOff = (item) => statuses[item.id] === 'reserved' || statuses[item.id] === 'gone';
+		// As cartas de um pedido cuja resposta se perdeu (revisão M3). A
+		// conferência as vê reservadas, talvez pelo próprio pedido, e por isso
+		// elas continuam valendo para um novo toque em Fechar pedido, com o
+		// mesmo request_id, enquanto o carrinho tiver exatamente as mesmas.
+		let lost = null;
+		const lostIds = () => {
+			const cart = readCart();
+
+			return lost && cart.length === lost.length && lost.every((one) => cart.some((item) => item.id === one.id)) ? new Set(lost.map((one) => one.id)) : new Set();
+		};
+		const freeItems = () => {
+			const kept = lostIds();
+
+			return readCart().filter((item) => kept.has(item.id) || statuses[item.id] === 'available');
+		};
+		const isOff = (item) => !lostIds().has(item.id) && (statuses[item.id] === 'reserved' || statuses[item.id] === 'gone');
 
 		function remove(id) {
 			writeCart(readCart().filter((item) => item.id !== id));
@@ -2780,7 +2868,8 @@
 			busy = true;
 			draw();
 
-			const fresh = await check();
+			const retry = lostIds().size > 0;
+			const fresh = retry ? {changed: 0, ok: true} : await check();
 			const items = freeItems();
 
 			// Um preço mudou agora há pouco: o comprador vê o total novo antes
@@ -2804,21 +2893,24 @@
 			let result;
 
 			try {
-				result = await rpc('place_order', {
+				result = await placeOrder({
 					buyer_name: name,
 					buyer_note: noteInput.value.trim() || null,
 					buyer_phone: phone,
 					items: items.filter((item) => item.kind !== 'kit').map((item) => item.id),
 					...(items.some((item) => item.kind === 'kit') ? {bundles: items.filter((item) => item.kind === 'kit').map((item) => item.id)} : {}),
-				});
+				}, orderAttempt(items));
 			}
 			catch (err) {
 				busy = false;
+				lost = err && err.network ? items : null;
 				formError.textContent = orderErrorText(err);
 				draw();
 
 				return;
 			}
+
+			lost = null;
 
 			if (result && (Array.isArray(result.unavailable) || Array.isArray(result.unavailable_kits))) {
 				busy = false;
@@ -2831,6 +2923,7 @@
 			const ordered = new Set(items.map((item) => item.id));
 			const done = {code: result.code, expected, items, receiptToken: result.receipt_token || null, reservedUntil: result.reserved_until, total: Number(result.total)};
 
+			endOrderAttempt();
 			keepLastOrder(done);
 			rememberOrder(done.receiptToken);
 			writeCart(readCart().filter((item) => !ordered.has(item.id)));

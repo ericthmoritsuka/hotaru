@@ -10,8 +10,8 @@
 // carrinho" heading, the crumbs are Início / Carrinho, there are three steps
 // and the line about the next screen; every English place_order message is
 // shown in Portuguese after "O pedido não foi fechado."; a message that is
-// not in the table is shown as it came; a dropped connection says the order
-// may have been recorded; a response that never comes frees the form.
+// not in the table is shown as it came; a dropped connection says to close it
+// again, which is safe; a response that never comes frees the form.
 //
 // Run: python3 build.py && PLAYWRIGHT=/path/to/node_modules/playwright node tests/order-errors-check.mjs
 
@@ -101,12 +101,12 @@ try {
 		assert.equal(plain(await page.locator('#order-error').textContent()), 'O pedido não foi fechado. duplicate key value violates unique constraint');
 	});
 
-	await check('a connection that drops says the order may have been recorded, and the form is free again', async () => {
+	await check('a connection that drops says to close the order again, and the form is free again', async () => {
 		state.abortRpc = ['place_order'];
 		await page.waitForFunction(() => !document.getElementById('order-submit').disabled);
 		await page.click('#order-submit');
 		await page.waitForFunction(() => document.getElementById('order-error').textContent.includes('a conexão caiu'));
-		assert.match(plain(await page.locator('#order-error').textContent()), /Ele pode ter sido registrado: se as suas cartas aparecerem como reservadas por outra pessoa, escreva para hotaru\.loja@gmail\.com com o seu nome\./);
+		assert.match(plain(await page.locator('#order-error').textContent()), /Toque em Fechar pedido de novo: se ele já tinha sido registrado, aparece o mesmo pedido, sem reservar as cartas outra vez\. Se algo parecer errado, escreva para hotaru\.loja@gmail\.com com o seu nome\./);
 		await page.waitForFunction(() => !document.getElementById('order-submit').disabled);
 		state.abortRpc = [];
 	});
