@@ -158,7 +158,7 @@ try {
 
 		assert.equal(await text(tile.locator('h3')), 'Trio inicial MEP');
 		assert.equal(await text(tile.locator('.kit-price strong')), 'R$ 14,25');
-		assert.equal(await text(tile.locator('.kit-price s')), 'R$ 15,00');
+		assert.equal(await text(tile.locator('.kit-price s')), 'separadas, R$ 15,00');
 		assert.equal(await text(tile.locator('.kit-tag')), '-5%');
 		assert.equal(await tile.locator('.kit-fan .card-pic').count(), 3);
 		await noSideways(page, 'home');
@@ -173,6 +173,8 @@ try {
 		const sprigatito = page.locator('[data-catalog="all"] .card-item', {has: page.locator('h3', {hasText: 'Sprigatito'})});
 
 		await sprigatito.locator('.quick-add').click();
+		// Adding first asks the database whether the copy is still for sale.
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length === 1);
 		assert.deepEqual((await cart(page)).map((item) => item.id), ['c-spr-free']);
 		await noSideways(page, 'avulsas');
 	});
@@ -246,6 +248,7 @@ try {
 		await page.goto(`${ORIGIN}/avulsas.html`);
 		await page.locator('[data-catalog="all"] .card-item').first().waitFor();
 		await page.locator('[data-catalog="all"] .card-item', {has: page.locator('h3', {hasText: 'Pikachu'})}).locator('.quick-add').click();
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length === 1);
 		await page.goto(`${ORIGIN}/pedido.html`);
 		await page.waitForFunction(() => !document.getElementById('order-submit').disabled);
 		await page.fill('#order-name', 'Bia');

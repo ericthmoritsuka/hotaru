@@ -63,10 +63,27 @@ BLOG_V = hashlib.sha256((ROOT / "assets/blog.js").read_bytes() + (ROOT / "assets
 BLOG_JS = f'<script type="module" src="assets/blog.js?v={BLOG_V}"></script>'
 
 
-def page(name, title, body, active=None):
+SITE = "https://lojahotaru.com.br"
+DESCRIPTION = "HOTARU, loja virtual de cartas colecionáveis: cartas avulsas e selados."
+
+
+def page(name, title, body, active=None, desc=None, noindex=False, base=None):
     # Toda página carrega o catálogo: o link Carrinho do cabeçalho conta as
-    # cartas do carrinho.
-    html = part("head").replace("{{TITLE}}", title) + part("sprite") + part("header") + body + CATALOGO_JS + part("footer")
+    # cartas do carrinho. O conteúdo vai dentro de <main>, e o link "Pular
+    # para o conteúdo" é a primeira parada do teclado.
+    url = f"{SITE}/" if name == "index" else f"{SITE}/{name}.html"
+    extra = ""
+    if base:
+        extra += f'<base href="{base}">\n'
+    if noindex:
+        extra += '<meta name="robots" content="noindex">\n'
+    head = (part("head")
+            .replace("{{HEAD_EXTRA}}", extra)
+            .replace("{{TITLE}}", title)
+            .replace("{{DESCRIPTION}}", desc or DESCRIPTION)
+            .replace("{{URL}}", url))
+    skip = '<a class="skip" href="#conteudo">Pular para o conteúdo</a>\n'
+    html = head + skip + part("sprite") + part("header") + '<main id="conteudo" tabindex="-1">' + body + "</main>\n" + CATALOGO_JS + part("footer")
     html = html.replace('href="assets/style.css"', f'href="assets/style.css?v={CSS_V}"', 1)
     if active:
         html = html.replace(f'<a href="{active}">', f'<a href="{active}" aria-current="page">', 1)
@@ -92,17 +109,37 @@ VIDEOS = [
 ]
 
 YT_EMBED = "https://www.youtube-nocookie.com/embed/"
+YT_THUMB = "https://i.ytimg.com/vi/"
 
+# O quadro do YouTube é uma fachada (revisão de QA, QA-03): a miniatura do
+# vídeo e um botão de tocar. O player do YouTube (cerca de 4 MB de scripts)
+# só entra quando alguém clica, e é o youtube-nocookie. A miniatura só carrega
+# perto da tela (loading="lazy"), e o vídeo é sorteado antes de ela começar a
+# carregar, sem uma primeira requisição jogada fora. O clique é tratado em
+# assets/catalogo.js (watchVideos). Sem JavaScript, fica o link do canal.
 CANAL = f'''<div class="ytbox">
       <div class="ytframe">
-        <iframe src="{YT_EMBED}{VIDEOS[0]}"
-          title="Vídeo sobre coleções de cartas do canal Ericthm no YouTube" loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-        <script>(function (v, f) {{
+        <script>(function (v, box) {{
           var id = v[Math.floor(Math.random() * v.length)];
-          if (id !== v[0]) f.src = "{YT_EMBED}" + id;
-        }})({json.dumps(VIDEOS)}, document.currentScript.previousElementSibling);</script>
+          var button = document.createElement("button");
+          var img = document.createElement("img");
+          var mark = document.createElement("span");
+          button.type = "button";
+          button.className = "yt-play";
+          button.dataset.id = id;
+          button.setAttribute("aria-label", "Assistir ao vídeo do canal Ericthm no YouTube");
+          img.className = "yt-thumb";
+          img.alt = "";
+          img.width = 480;
+          img.height = 360;
+          img.loading = "lazy";
+          img.src = "{YT_THUMB}" + id + "/hqdefault.jpg";
+          mark.className = "yt-mark";
+          mark.setAttribute("aria-hidden", "true");
+          mark.innerHTML = '<svg width="22" height="22" viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+          button.append(img, mark);
+          box.append(button);
+        }})({json.dumps(VIDEOS)}, document.currentScript.parentNode);</script>
       </div>
       <a class="plate" href="{YT}" target="_blank" rel="noopener">
         <b>@Ericthm_ · Jornada do Eric</b>
@@ -122,13 +159,13 @@ home = f'''
       </p>
       <div class="actions">
         <a class="btn btn-gold" href="avulsas.html">Ver as cartas</a>
-        <a class="btn btn-ghost" href="{YT}" target="_blank" rel="noopener">Ver o canal</a>
+        <a class="btn btn-ghost" href="selados.html">Ver os selados</a>
       </div>
     </div>
     <!-- Uma carta por categoria à venda (Eric, 2026-11-24): cada uma leva à
          sua página. Uma categoria nova ganha a sua carta aqui. -->
     <nav class="hero-cards hero-cards-2" aria-label="Categorias">
-      {tcard("m-card", "Singles", href="avulsas.html", title="Ver as cartas avulsas")}
+      {tcard("m-card", "Avulsas", href="avulsas.html", title="Ver as cartas avulsas")}
       {tcard("m-booster", "Selados", href="selados.html", title="Ver os selados")}
     </nav>
   </div>
@@ -220,7 +257,8 @@ home = f'''
 
 '''
 
-page("index", "HOTARU — Cartas colecionáveis e selados | Loja virtual", home, "index.html")
+page("index", "HOTARU | Cartas colecionáveis e selados | Loja virtual", home, "index.html",
+     desc="Cartas avulsas de Pokémon TCG e alguns selados, direto da coleção do Eric. Loja virtual de Recife/PE.")
 print("index.html")
 
 
@@ -239,61 +277,64 @@ avulsas = f'''
 
 <section class="wrap cartas">
   <div class="kits-all" data-catalog="kits" hidden></div>
-  <div data-catalog="all"><p class="card-note" role="status">Carregando as cartas…</p></div>
+  <div data-catalog="all"><p class="card-note card-loading" role="status">Carregando as cartas…</p></div>
 </section>
 '''
 
-page("avulsas", "Cartas avulsas — HOTARU", avulsas, "avulsas.html")
+page("avulsas", "Cartas avulsas | HOTARU", avulsas, "avulsas.html",
+     desc="As cartas avulsas de Pokémon TCG à venda na HOTARU. Ponha no carrinho, feche o pedido e pague com Pix.")
 print("avulsas.html")
 
 carta = f'''
-<div class="pagehead">
+<div class="pagehead compact">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a></p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; <span data-crumb>Carta</span></p>
   </div>
 </div>
 
 <section class="wrap cartas">
-  <div data-catalog="card"><p class="card-note" role="status">Carregando a carta…</p></div>
+  <div data-catalog="card"><p class="card-note card-loading" role="status">Carregando a carta…</p></div>
 </section>
 '''
 
-page("carta", "Carta — HOTARU", carta, "avulsas.html")
+page("carta", "Carta | HOTARU", carta, "avulsas.html",
+     desc="Uma carta avulsa de Pokémon TCG à venda na HOTARU.")
 print("carta.html")
 
 # Um kit (Eric, 2026-11-25): várias cartas vendidas juntas, montado na tela
 # Shop do card tracker. A página lê o kit de store_bundles pelo id.
 kit = f'''
-<div class="pagehead">
+<div class="pagehead compact">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; Kit</p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; <span data-crumb>Kit</span></p>
   </div>
 </div>
 
 <section class="wrap cartas">
-  <div data-catalog="kit"><p class="card-note" role="status">Carregando o kit…</p></div>
+  <div data-catalog="kit"><p class="card-note card-loading" role="status">Carregando o kit…</p></div>
 </section>
 '''
 
-page("kit", "Kit — HOTARU", kit, "avulsas.html")
+page("kit", "Kit | HOTARU", kit, "avulsas.html",
+     desc="Um kit de cartas de Pokémon TCG vendidas juntas na HOTARU, por menos do que separadas.")
 print("kit.html")
 
 pedido = f'''
 <div class="pagehead">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="avulsas.html">Cartas</a> &nbsp;/&nbsp; Carrinho</p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Carrinho</p>
     <h1>Carrinho</h1>
     <p>O carrinho não reserva as cartas: elas ficam com quem fechar o pedido primeiro. Fechado o pedido, você paga com Pix em até 48 horas.</p>
   </div>
 </div>
 
 <section class="wrap cartas">
-  <div data-catalog="order"><p class="card-note" role="status">Carregando o carrinho…</p></div>
+  <div data-catalog="order"><p class="card-note card-loading" role="status">Carregando o carrinho…</p></div>
 </section>
 {PEDIDO_JS}
 '''
 
-page("pedido", "Carrinho — HOTARU", pedido)
+page("pedido", "Carrinho | HOTARU", pedido, desc="O seu carrinho na HOTARU.")
 print("pedido.html")
 
 selados = f'''
@@ -306,26 +347,28 @@ selados = f'''
 </div>
 
 <section class="wrap cartas">
-  <div data-catalog="sealed"><p class="card-note" role="status">Carregando os selados…</p></div>
+  <div data-catalog="sealed"><p class="card-note card-loading" role="status">Carregando os selados…</p></div>
 </section>
 '''
 
-page("selados", "Selados — HOTARU", selados, "selados.html")
+page("selados", "Selados | HOTARU", selados, "selados.html",
+     desc="Boosters, boxes e outros produtos lacrados à venda na HOTARU, com fotos do próprio produto.")
 print("selados.html")
 
 selado = f'''
-<div class="pagehead">
+<div class="pagehead compact">
   <div class="wrap">
-    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="selados.html">Selados</a></p>
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; <a href="selados.html">Selados</a> &nbsp;/&nbsp; <span data-crumb>Selado</span></p>
   </div>
 </div>
 
 <section class="wrap cartas">
-  <div data-catalog="sealedone"><p class="card-note" role="status">Carregando o produto…</p></div>
+  <div data-catalog="sealedone"><p class="card-note card-loading" role="status">Carregando o produto…</p></div>
 </section>
 '''
 
-page("selado", "Selado — HOTARU", selado, "selados.html")
+page("selado", "Selado | HOTARU", selado, "selados.html",
+     desc="Um produto lacrado de Pokémon TCG à venda na HOTARU.")
 print("selado.html")
 
 # --------------------------------------------------------------------------
@@ -342,12 +385,13 @@ blog = f'''
 </div>
 
 <section class="wrap cartas">
-  <div data-blog="list"><p class="card-note" role="status">Carregando os posts…</p></div>
+  <div data-blog="list"><p class="card-note card-loading" role="status">Carregando os posts…</p></div>
 </section>
 {BLOG_JS}
 '''
 
-page("blog", "Blog — HOTARU", blog, "blog.html")
+page("blog", "Blog | HOTARU", blog, "blog.html",
+     desc="Textos sobre Pokémon TCG, coleção e outros universos, no blog da HOTARU.")
 print("blog.html")
 
 post = f'''
@@ -358,12 +402,13 @@ post = f'''
 </div>
 
 <section class="wrap cartas">
-  <div data-blog="post"><p class="card-note" role="status">Carregando o post…</p></div>
+  <div data-blog="post"><p class="card-note card-loading" role="status">Carregando o post…</p></div>
 </section>
 {BLOG_JS}
 '''
 
-page("post", "Blog — HOTARU", post, "blog.html")
+page("post", "Blog | HOTARU", post, "blog.html",
+     desc="Um texto do blog da HOTARU, sobre Pokémon TCG e coleção.")
 print("post.html")
 
 # A administração dos selados, dos destaques e do blog: só para o Eric, sem
@@ -387,7 +432,7 @@ admin = f'''
 <script type="module" src="assets/admin.js?v={ADMIN_V}"></script>
 '''
 
-page("admin", "Administração — HOTARU", admin)
+page("admin", "Administração | HOTARU", admin)
 admin_html = (ROOT / "admin.html").read_text(encoding="utf-8")
 (ROOT / "admin.html").write_text(admin_html.replace("</head>", '<meta name="robots" content="noindex, nofollow">\n</head>', 1), encoding="utf-8")
 print("admin.html")
@@ -402,12 +447,12 @@ meus = f'''
 </div>
 
 <section class="wrap cartas">
-  <div data-catalog="mine"><p class="card-note" role="status">Carregando os seus pedidos…</p></div>
+  <div data-catalog="mine"><p class="card-note card-loading" role="status">Carregando os seus pedidos…</p></div>
 </section>
 {PEDIDO_JS}
 '''
 
-page("meus-pedidos", "Meus pedidos — HOTARU", meus)
+page("meus-pedidos", "Meus pedidos | HOTARU", meus, desc="Os seus pedidos na HOTARU.")
 print("meus-pedidos.html")
 
 
@@ -527,7 +572,8 @@ sobre = f'''
 </section>
 '''
 
-page("sobre", "Sobre nós — HOTARU | Recife/PE", sobre, "sobre.html")
+page("sobre", "Sobre nós | HOTARU, Recife/PE", sobre, "sobre.html",
+     desc="A história da HOTARU: uma paixão por cartas Pokémon que virou loja virtual em Recife/PE.")
 
 
 # --------------------------------------------------------------------------
@@ -557,12 +603,40 @@ ajuda = f'''
   </div>
 </div>
 
-<section class="wrap" id="faq">
-  <div class="section-head"><div><p class="eyebrow">Dúvidas</p><h2>Perguntas frequentes</h2></div></div>
-  <div class="faq">{faq_html}</div>
+<section id="faq">
+  <div class="wrap">
+    <div class="section-head"><div><p class="eyebrow">Dúvidas</p><h2>Perguntas frequentes</h2></div></div>
+    <div class="faq">{faq_html}</div>
+  </div>
 </section>
 '''
 
-page("ajuda", "Ajuda — HOTARU", ajuda)
+page("ajuda", "Ajuda | HOTARU", ajuda, desc="Perguntas frequentes sobre a HOTARU.")
+
+# --------------------------------------------------------------------------
+# Página não encontrada
+# --------------------------------------------------------------------------
+
+# O GitHub Pages serve este arquivo para qualquer endereço que não existe, em
+# qualquer profundidade (/a/b/c), por isso o <base href="/">: sem ele, o CSS e
+# os links relativos quebrariam.
+naofound = f'''
+<div class="pagehead">
+  <div class="wrap">
+    <p class="crumbs"><a href="index.html">Início</a> &nbsp;/&nbsp; Página não encontrada</p>
+    <h1>Página não encontrada</h1>
+    <p>O endereço que você abriu não existe ou mudou de lugar. Volte para o início ou veja as cartas à venda.</p>
+  </div>
+</div>
+
+<section class="wrap cartas">
+  <div class="notfound-actions">
+    <a class="btn btn-gold" href="avulsas.html">Ver as cartas</a>
+    <a class="btn btn-navy" href="index.html">Voltar para o início</a>
+  </div>
+</section>
+'''
+
+page("404", "Página não encontrada | HOTARU", naofound, desc="Esta página não existe na HOTARU.", noindex=True, base="/")
 
 print("ok")

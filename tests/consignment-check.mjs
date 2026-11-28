@@ -145,6 +145,7 @@ try {
 	await check('a consigned copy goes in the cart and is ordered by its listing ID', async () => {
 		await page.goto(`${ORIGIN}/avulsas.html`);
 		await tile('Mew').locator('.quick-add').click();
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length > 0);
 		assert.deepEqual((await cart(page)).map((item) => item.id), [MEW]);
 		await page.goto(`${ORIGIN}/pedido.html`);
 		await page.locator(`.cart-item[data-id="${MEW}"]`).waitFor();

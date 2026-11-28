@@ -60,6 +60,7 @@ const CATALOG = [
 	listing('t-017', 'Especialona', {condition: 'Lightly Played', finish: 'Holo, 1st Edition stamp', rarity: 'Special illustration rare'}),
 	listing('t-018', 'Hiperzinha', {rarity: 'Hyper rare'}),
 	listing('30th-158', 'Mewfuturo', {finish: 'Holo', rarity: 'Futuristic Rare'}),
+	listing('mep-043', 'Rowletpromo', {finish: 'Holo', rarity: 'Promo'}),
 ];
 
 function startServer() {
@@ -110,8 +111,19 @@ async function open(browser, viewport) {
 
 const plain = (text) => String(text).replace(/\s+/g, ' ').trim();
 const tile = (page, name) => page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first();
-const tags = async (page, name) => (await tile(page, name).locator('.finish-tags .tag').allTextContents()).map(plain);
-const condTags = (page, name) => tile(page, name).locator('.finish-tags .cond-tag');
+// A tile photo carries only the shine pill (Holo, Reverse Holo); edition,
+// stamp, promo, size, rarity and condition follow as text under the set
+// line, each with its own "?" (Eric asked for the photo to stay clear of the
+// card name, 2026-11-27 design review F4).
+const tags = async (page, name) => {
+	const item = tile(page, name);
+	const pills = (await item.locator('.finish-tags .tag').allTextContents()).map(plain);
+	const line = (await item.locator('.card-marks').count()) ? plain(await item.locator('.card-marks').textContent()).split(' · ') : [];
+
+	return [...pills, ...line];
+};
+const marks = (page, name) => tile(page, name).locator('.card-marks .finish-help');
+const condTags = (page, name) => tile(page, name).locator('.card-marks .finish-help[data-finish-kind^="cond-"]');
 
 // The open explainer holds only its title, its picture or minis, and its
 // text: no stray text node, such as the "null" that replaceChildren wrote for
@@ -143,7 +155,7 @@ async function tagsInsideTile(page, label) {
 	const bad = await page.evaluate(() => [...document.querySelectorAll('.card-item')].flatMap((item) => {
 		const box = item.getBoundingClientRect();
 
-		return [...item.querySelectorAll('.finish-tags .tag')]
+		return [...item.querySelectorAll('.finish-tags .tag, .card-marks')]
 			.filter((tag) => {
 				const spot = tag.getBoundingClientRect();
 
@@ -216,12 +228,12 @@ try {
 
 	await check('a condition the tracker does not publish shows as it came, with no explainer', async () => {
 		assert.deepEqual(await tags(page, 'Desconhecida'), ['Played']);
-		assert.equal(await condTags(page, 'Desconhecida').evaluate((node) => node.tagName), 'SPAN');
+		assert.equal(await marks(page, 'Desconhecida').count(), 0);
 	});
 
 	await check('an Illustration Rare tile shows the rarity badge with its explainer', async () => {
 		assert.deepEqual(await tags(page, 'Ilustrada'), ['Illustration Rare?']);
-		await tile(page, 'Ilustrada').locator('.finish-tags .tag').click();
+		await marks(page, 'Ilustrada').click();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Illustration Rare');
 		await popClean(page, 'Illustration Rare');
@@ -232,9 +244,13 @@ try {
 		assert.deepEqual(await tags(page, 'Hiperzinha'), ['Hyper Rare?']);
 	});
 
+	await check('the 30th anniversary MEP promos get the 30 anos stamp by card, with the finish text left as Holo', async () => {
+		assert.ok((await tags(page, 'Rowletpromo')).includes('Stamp 30 anos?'));
+	});
+
 	await check('Futuristic Rare (the 30th Mew ex and Mewtwo ex) keeps its English name and gets a badge and an explainer', async () => {
 		assert.deepEqual(await tags(page, 'Mewfuturo'), ['Holo?', 'Stamp 30 anos?', 'Futuristic Rare?']);
-		await tile(page, 'Mewfuturo').locator('.finish-tags .tag', {hasText: 'Futuristic'}).click();
+		await marks(page, 'Mewfuturo').nth(1).click();
 		await page.locator('#finish-pop').waitFor({state: 'visible'});
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Futuristic Rare');
 		await popClean(page, 'Futuristic Rare');
@@ -272,7 +288,7 @@ try {
 		await page.locator('.card-search').fill('illustration rare');
 		assert.deepEqual((await page.locator('.cards-grid h3').allTextContents()).sort(), ['Especialona', 'Ilustrada']);
 		await page.locator('.card-search').fill('');
-		assert.equal((await page.locator('.cards-grid h3').count()), 19);
+		assert.equal((await page.locator('.cards-grid h3').count()), 20);
 	});
 
 	await check('390 px: no sideways scroll and every badge stays inside its tile', async () => {

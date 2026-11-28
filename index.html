@@ -3,22 +3,26 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>HOTARU — Cartas colecionáveis e selados | Loja virtual</title>
-<meta name="description" content="HOTARU — loja virtual de cartas colecionáveis: cartas avulsas e selados.">
+<title>HOTARU | Cartas colecionáveis e selados | Loja virtual</title>
+<meta name="description" content="Cartas avulsas de Pokémon TCG e alguns selados, direto da coleção do Eric. Loja virtual de Recife/PE.">
 <meta name="theme-color" content="#0e1f47">
 <link rel="icon" href="assets/favicon.png">
 <link rel="apple-touch-icon" href="assets/apple-touch-icon.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<meta property="og:title" content="HOTARU — Brilhe em novos universos">
-<meta property="og:description" content="Loja virtual de cartas colecionáveis: cartas avulsas e selados.">
-<meta property="og:image" content="assets/og-image.jpg">
+<meta property="og:title" content="HOTARU | Cartas colecionáveis e selados | Loja virtual">
+<meta property="og:description" content="Cartas avulsas de Pokémon TCG e alguns selados, direto da coleção do Eric. Loja virtual de Recife/PE.">
+<meta property="og:image" content="https://lojahotaru.com.br/assets/og-image.jpg">
+<meta property="og:url" content="https://lojahotaru.com.br/">
+<meta property="og:site_name" content="HOTARU">
+<meta property="og:locale" content="pt_BR">
 <meta property="og:type" content="website">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="stylesheet" href="assets/style.css?v=bb8ac85cbc">
+<link rel="stylesheet" href="assets/style.css?v=40abb3913c">
 </head>
 <body>
+<a class="skip" href="#conteudo">Pular para o conteúdo</a>
 <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
   <defs>
     <linearGradient id="g-foil" x1="0" y1="0" x2="1" y2="1">
@@ -177,14 +181,12 @@
 </svg>
 <header class="masthead">
   <div class="wrap">
-    <nav class="nav">
+    <nav class="nav" aria-label="Principal">
       <a href="index.html" aria-current="page">Início</a>
       <a href="avulsas.html">Cartas</a>
       <a href="selados.html">Selados</a>
       <a href="blog.html">Blog</a>
       <a href="sobre.html">Sobre nós</a>
-      <a href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">YouTube</a>
-      <a href="#contato">Contato</a>
     </nav>
 
     <a class="brand" href="index.html">
@@ -202,7 +204,7 @@
     </div>
   </div>
 </header>
-
+<main id="conteudo" tabindex="-1">
 <section class="hero">
   <div class="wrap">
     <div>
@@ -214,7 +216,7 @@
       </p>
       <div class="actions">
         <a class="btn btn-gold" href="avulsas.html">Ver as cartas</a>
-        <a class="btn btn-ghost" href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">Ver o canal</a>
+        <a class="btn btn-ghost" href="selados.html">Ver os selados</a>
       </div>
     </div>
     <!-- Uma carta por categoria à venda (Eric, 2026-11-24): cada uma leva à
@@ -224,7 +226,7 @@
   <div class="tcard-inner">
     <svg class="corner tl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner tr" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner bl" aria-hidden="true"><use href="#i-corner"/></svg><svg class="corner br" aria-hidden="true"><use href="#i-corner"/></svg>
     <svg class="motif" viewBox="0 0 64 64" aria-hidden="true"><use href="#m-card"/></svg>
-    <span class="label">Singles</span>
+    <span class="label">Avulsas</span>
   </div>
 </a>
       <a class="tcard " href="selados.html" aria-label="Ver os selados">
@@ -293,7 +295,7 @@
     <div data-blog="home"></div>
   </div>
 </section>
-<script type="module" src="assets/blog.js?v=9757fb3204"></script>
+<script type="module" src="assets/blog.js?v=60904d6997"></script>
 
 <section class="store" id="sobre">
   <div class="wrap">
@@ -313,14 +315,27 @@
     </div>
     <div class="ytbox">
       <div class="ytframe">
-        <iframe src="https://www.youtube-nocookie.com/embed/EME_g29ZMVo"
-          title="Vídeo sobre coleções de cartas do canal Ericthm no YouTube" loading="lazy"
-          allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
-        <script>(function (v, f) {
+        <script>(function (v, box) {
           var id = v[Math.floor(Math.random() * v.length)];
-          if (id !== v[0]) f.src = "https://www.youtube-nocookie.com/embed/" + id;
-        })(["EME_g29ZMVo", "c0Azny49uPQ", "qkAC4Uh-Aw0", "TErW8C_WeT8"], document.currentScript.previousElementSibling);</script>
+          var button = document.createElement("button");
+          var img = document.createElement("img");
+          var mark = document.createElement("span");
+          button.type = "button";
+          button.className = "yt-play";
+          button.dataset.id = id;
+          button.setAttribute("aria-label", "Assistir ao vídeo do canal Ericthm no YouTube");
+          img.className = "yt-thumb";
+          img.alt = "";
+          img.width = 480;
+          img.height = 360;
+          img.loading = "lazy";
+          img.src = "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg";
+          mark.className = "yt-mark";
+          mark.setAttribute("aria-hidden", "true");
+          mark.innerHTML = '<svg width="22" height="22" viewBox="0 0 12 12"><path d="M2 1l9 5-9 5z" fill="currentColor"/></svg>';
+          button.append(img, mark);
+          box.append(button);
+        })(["EME_g29ZMVo", "c0Azny49uPQ", "qkAC4Uh-Aw0", "TErW8C_WeT8"], document.currentScript.parentNode);</script>
       </div>
       <a class="plate" href="https://www.youtube.com/@Ericthm_" target="_blank" rel="noopener">
         <b>@Ericthm_ · Jornada do Eric</b>
@@ -337,7 +352,8 @@
   </div>
 </section>
 
-<script src="assets/catalogo.js?v=607ee55784" defer></script><footer class="foot" id="contato">
+</main>
+<script src="assets/catalogo.js?v=56549d851b" defer></script><footer class="foot" id="contato">
   <div class="wrap">
     <div class="foot-top">
       <div class="about">
@@ -359,7 +375,7 @@
     </div>
 
     <div class="foot-bot">
-      <span>© 2026 HOTARU — Recife/PE.</span>
+      <span>© 2026 HOTARU · Recife/PE</span>
     </div>
   </div>
 </footer>

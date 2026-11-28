@@ -139,6 +139,17 @@ async function insideScreen(page, label) {
 
 const tileTag = (page, name) => page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).locator('.finish-tag').first();
 
+// A tile photo carries only the shine pill; edition, stamp, promo and size
+// follow as text under the set line, each with its "?" (2026-11-27 design
+// review F4). This reads both, pill first, as the labels the buyer sees.
+const tileTexts = async (page, name) => {
+	const item = page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first();
+	const pills = (await item.locator('.finish-tags .tag').allTextContents()).map(plain);
+	const line = (await item.locator('.card-marks').count()) ? plain(await item.locator('.card-marks').textContent()).split(' · ') : [];
+
+	return [...pills, ...line];
+};
+
 let passed = 0;
 
 async function check(label, run) {
@@ -159,25 +170,24 @@ try {
 	await check('Holo and Reverse Holo tags are buttons; other finishes stay a plain tag', async () => {
 		assert.equal(await tileTag(page, 'Lugia').evaluate((node) => node.tagName), 'BUTTON');
 		assert.equal(await tileTag(page, 'Mew ex').evaluate((node) => node.tagName), 'BUTTON');
-		assert.equal(await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Dragapult ex'})}).locator('.finish-tags .tag', {hasText: 'Jumbo'}).evaluate((node) => node.tagName), 'SPAN', 'Jumbo has no explainer');
+		const dragapult = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Dragapult ex'})});
+
+		assert.equal(plain(await dragapult.locator('.card-marks').textContent()), 'Jumbo');
+		assert.equal(await dragapult.locator('.card-marks .finish-help').count(), 0, 'Jumbo has no explainer');
 		assert.equal(await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Luxray'})}).count(), 2);
 		assert.equal(await page.locator('.card-shot .finish-tag-help').count(), 0, 'no button inside the photo link');
 	});
 
-	await check('every 30 anos card has its own Stamp tag, one line, and the shine tag drops the stamp', async () => {
-		const tags = (name) => page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag');
-		const texts = async (name) => (await tags(name).allTextContents()).map(plain);
+	await check('every 30 anos card has its own Stamp mark, apart from the shine pill on the photo', async () => {
+		const photo = (name) => page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag');
 
-		assert.deepEqual(await texts('Lugia'), ['Holo?', 'Stamp 30 anos?'], 'a Holo common recorded without the stamp');
-		assert.deepEqual(await texts('Mew ex'), ['Holo?', 'Stamp 30 anos?'], 'a Holo whose finish names the stamp');
-		assert.deepEqual(await texts('Pikachu'), ['Stamp 30 anos?'], 'a Normal 30 anos card');
-		assert.equal(await tags('Luxray').filter({hasText: 'Stamp'}).count(), 0, 'no stamp outside the 30 anos set');
-		assert.equal(await page.locator('.finish-tags').filter({hasText: /carimbo/i}).count(), 0);
-
-		const stamp = await tags('Lugia').nth(1).boundingBox();
-		const shine = await tags('Lugia').nth(0).boundingBox();
-
-		assert.ok(stamp.height <= shine.height + 1, `the Stamp tag wraps (${stamp.height}px against ${shine.height}px)`);
+		assert.deepEqual(await tileTexts(page, 'Lugia'), ['Holo?', 'Stamp 30 anos?'], 'a Holo common recorded without the stamp');
+		assert.deepEqual(await tileTexts(page, 'Mew ex'), ['Holo?', 'Stamp 30 anos?'], 'a Holo whose finish names the stamp');
+		assert.deepEqual(await tileTexts(page, 'Pikachu'), ['Stamp 30 anos?'], 'a Normal 30 anos card');
+		assert.ok(!(await tileTexts(page, 'Luxray')).some((text) => /Stamp/.test(text)), 'no stamp outside the 30 anos set');
+		assert.equal(await page.locator('.finish-tags, .card-marks').filter({hasText: /carimbo/i}).count(), 0);
+		assert.equal(await photo('Lugia').count(), 1, 'the photo carries only the shine pill');
+		assert.equal(await photo('Pikachu').count(), 0, 'a Normal card has no pill on the photo');
 
 		if (SHOTS) {
 			await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Mew ex'})}).first().scrollIntoViewIfNeeded();
@@ -201,6 +211,7 @@ try {
 		assert.equal(plain(await page.locator('.finish-pop-title').textContent()), 'Stamp 30 anos');
 		await page.locator('h1').tap();
 		await page.locator('.buy-box .buy-add').first().tap();
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length > 0);
 		await page.goto(`${ORIGIN}/pedido.html`);
 
 		const cartStamp = page.locator('.cart-meta .finish-help[data-finish-kind="stamp30"]');
@@ -215,7 +226,7 @@ try {
 	});
 
 	await check('the Stamp 30 anos tag opens its own explainer with the real stamp', async () => {
-		const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Lugia'})}).first().locator('.stamp-tag');
+		const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Lugia'})}).first().locator('.card-marks .finish-help');
 
 		assert.equal(await tag.getAttribute('data-finish-kind'), 'stamp30');
 		await tag.scrollIntoViewIfNeeded();
@@ -237,22 +248,25 @@ try {
 		assert.ok(await page.locator('#finish-pop').isHidden());
 	});
 
-	await check('the Stamp tag with its ? stays on one line at 360px too', async () => {
+	await check('the marks line stays inside its tile at 390 and 360px', async () => {
 		for (const width of [390, 360]) {
 			await page.setViewportSize({height: 844, width});
 
-			const tags = page.locator('.card-item', {has: page.locator('h3', {hasText: 'Lugia'})}).first().locator('.finish-tags .tag');
-			const stamp = await tags.nth(1).boundingBox();
-			const shine = await tags.nth(0).boundingBox();
+			const bad = await page.evaluate(() => [...document.querySelectorAll('.card-item')].filter((item) => {
+				const box = item.getBoundingClientRect();
+				const marks = item.querySelector('.card-marks');
 
-			assert.ok(stamp.height <= shine.height + 1, `at ${width}px the Stamp tag wraps (${stamp.height}px against ${shine.height}px)`);
+				return marks && (marks.scrollWidth > marks.clientWidth + 1 || marks.getBoundingClientRect().right > box.right + 0.5);
+			}).map((item) => item.querySelector('h3').textContent));
+
+			assert.deepEqual(bad, [], `at ${width}px a marks line leaves its tile`);
 		}
 
 		await page.setViewportSize({height: 844, width: 390});
 	});
 
 	await check('each badge the tracker can publish gets its community name', async () => {
-		const texts = async (name) => (await page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag').allTextContents()).map(plain);
+		const texts = (name) => tileTexts(page, name);
 		const expected = {
 			Charmander: ['1ª Edição?'],
 			Cottonee: ['Cosmos Holo?', 'Promo?'],
@@ -269,7 +283,7 @@ try {
 			assert.deepEqual(await texts(name), tags, name);
 		}
 
-		assert.equal(await page.locator('.finish-tags').filter({hasText: /pattern|foil|anniversary|edition|Sem sombra|Ilimitada/i}).count(), 0, 'no tracker words left');
+		assert.equal(await page.locator('.finish-tags, .card-marks').filter({hasText: /pattern|foil|anniversary|edition|Sem sombra|Ilimitada/i}).count(), 0, 'no tracker words left');
 
 		if (SHOTS) {
 			await page.locator('.card-item', {has: page.locator('h3', {hasText: 'Exeggcute'})}).first().scrollIntoViewIfNeeded();
@@ -278,8 +292,10 @@ try {
 	});
 
 	await check('each new badge opens its own explainer', async () => {
+		// The pill or the "?" of a mark, found by the explainer it opens.
+		const KINDS = {'1ª Edição': 'first', Cosmos: 'holo', Machoke: 'unlimited', 'Poké Ball': 'reverse', 'Master Ball': 'reverse', Promo: 'promo', Shadowless: 'shadowless', 'Stamp 25 anos': 'stamp25', Unlimited: 'unlimited'};
 		const open = async (name, label) => {
-			const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator('.finish-tags .tag', {hasText: label});
+			const tag = page.locator('.card-item', {has: page.locator('h3', {hasText: name})}).first().locator(`.finish-tags [data-finish-kind="${KINDS[label]}"], .card-marks [data-finish-kind="${KINDS[label]}"]`).first();
 
 			await tag.scrollIntoViewIfNeeded();
 			await tag.tap();
@@ -502,6 +518,7 @@ try {
 
 	await check('the cart and the kit page open it beside a Holo finish', async () => {
 		await page.locator('.buy-box .buy-add').first().tap();
+		await page.waitForFunction(() => JSON.parse(localStorage.getItem('hotaru.cart') || '[]').length > 0);
 		await page.goto(`${ORIGIN}/pedido.html`);
 
 		const cartHelp = page.locator('.cart-meta .finish-help');
